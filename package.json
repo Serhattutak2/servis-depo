@@ -1,0 +1,30 @@
+{
+  "name": "servis-depo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servis Depo - oto servis depo ve is emri uygulamasi",
+  "scripts": {
+    "vendor": "node scripts/vendor.js",
+    "build": "node scripts/vendor.js && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "6.2.0",
+    "@capacitor/app": "6.0.1",
+    "@capacitor/core": "6.2.0",
+    "@capacitor/filesystem": "6.0.2",
+    "@capacitor/share": "6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "6.2.0",
+    "@fontsource/barlow": "5.1.0",
+    "@fontsource/barlow-condensed": "5.1.0",
+    "@fontsource/jetbrains-mono": "5.1.1",
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/tur": "1.0.0",
+    "@zxing/library": "0.20.0",
+    "jsqr": "1.4.0",
+    "qrcode-generator": "1.4.4",
+    "tesseract.js": "5.1.1",
+    "tesseract.js-core": "5.1.1"
+  }
+}

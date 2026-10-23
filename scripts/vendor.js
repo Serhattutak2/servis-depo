@@ -1,0 +1,27 @@
+// Copies offline libraries, OCR language data and fonts into www/vendor.
+// Everything the app needs ships inside the APK; nothing is loaded from the internet.
+const fs = require("fs"), path = require("path");
+const root = path.join(__dirname, ".."), nm = p => path.join(root, "node_modules", p), out = p => path.join(root, "www", "vendor", p);
+function cp(src, dst) { fs.mkdirSync(path.dirname(out(dst)), { recursive: true }); fs.copyFileSync(nm(src), out(dst)); }
+cp("@zxing/library/umd/index.min.js", "zxing.min.js");
+cp("jsqr/dist/jsQR.js", "jsQR.js");
+cp("qrcode-generator/qrcode.js", "qrcode.js");
+cp("tesseract.js/dist/tesseract.min.js", "tesseract/tesseract.min.js");
+cp("tesseract.js/dist/worker.min.js", "tesseract/worker.min.js");
+for (const f of ["tesseract-core-lstm.wasm.js", "tesseract-core-simd-lstm.wasm.js", "tesseract-core-relaxedsimd-lstm.wasm.js"])
+  if (fs.existsSync(nm("tesseract.js-core/" + f))) cp("tesseract.js-core/" + f, "tesseract/" + f);
+cp("@tesseract.js-data/tur/4.0.0_best_int/tur.traineddata.gz", "tesseract/lang/tur.traineddata.gz");
+const fonts = [
+  ["barlow-condensed", "Barlow Condensed", [600, 700]],
+  ["barlow", "Barlow", [400, 500, 600, 700]],
+  ["jetbrains-mono", "JetBrains Mono", [500, 700]],
+];
+let css = "";
+for (const [pkg, fam, ws] of fonts) for (const w of ws) for (const sub of ["latin-ext", "latin"]) {
+  const f = `${pkg}-${sub}-${w}-normal.woff2`;
+  if (!fs.existsSync(nm(`@fontsource/${pkg}/files/${f}`))) continue;
+  cp(`@fontsource/${pkg}/files/${f}`, "fonts/" + f);
+  css += `@font-face{font-family:"${fam}";font-style:normal;font-weight:${w};font-display:swap;src:url(fonts/${f}) format("woff2")}\n`;
+}
+fs.writeFileSync(out("fonts.css"), css);
+console.log("vendor ok");

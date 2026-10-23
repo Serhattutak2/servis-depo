@@ -1,0 +1,7 @@
+{
+  "appId": "com.serhattutak.servisdepo",
+  "appName": "Servis Depo",
+  "webDir": "www",
+  "android": { "allowMixedContent": false, "captureInput": true, "webContentsDebuggingEnabled": false },
+  "plugins": {}
+}

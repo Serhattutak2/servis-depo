@@ -1,0 +1,56 @@
+name: APK oluştur
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Kütüphaneleri kur
+        run: npm ci
+
+      - name: Uygulama dosyalarını hazırla
+        run: npm run build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: APK derle
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: APK'yı adlandır
+        run: cp android/app/build/outputs/apk/release/app-release.apk servis-depo.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: servis-depo-apk
+          path: servis-depo.apk
+
+      - name: İndirme sayfasına koy
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Servis Depo 1.0.${{ github.run_number }}
+          body: Telefona indirip kurun. Eski sürümün üstüne kurulur, kayıtlar silinmez.
+          files: servis-depo.apk
+          make_latest: true
