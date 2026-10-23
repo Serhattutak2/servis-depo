@@ -1250,6 +1250,12 @@ async function loadDB(){
   for(const f of tries){
     try{const o=JSON.parse(await readText(f));if(o&&o.data){db._load(o.data);if(f!==DB_FILE)toast("Kayıt otomatik yedekten geri yüklendi");return;}}catch{}
   }
+  // Önceki sürüm kayıtları uygulamanın tarayıcı hafızasına yazmış olabilir: varsa dosyaya taşı.
+  if(FS){
+    for(const k of ["sd:"+DB_FILE,...[0,1,2,3,4,5,6].map(d=>`sd:oto-yedek-${d}.json`)]){
+      try{const t=localStorage.getItem(k);if(!t)continue;const o=JSON.parse(t);if(o&&o.data){db._load(o.data);S.loadedOnce=true;await persist();toast("Önceki sürümdeki kayıtlar aktarıldı");return;}}catch{}
+    }
+  }
 }
 async function blobToB64(b){const buf=new Uint8Array(await b.arrayBuffer());let s="";for(let i=0;i<buf.length;i+=0x8000)s+=String.fromCharCode.apply(null,buf.subarray(i,i+0x8000));return btoa(s);}
 const shareFile={
