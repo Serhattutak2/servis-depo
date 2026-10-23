@@ -10,7 +10,9 @@ cp("tesseract.js/dist/tesseract.min.js", "tesseract/tesseract.min.js");
 cp("tesseract.js/dist/worker.min.js", "tesseract/worker.min.js");
 for (const f of ["tesseract-core-lstm.wasm.js", "tesseract-core-simd-lstm.wasm.js", "tesseract-core-relaxedsimd-lstm.wasm.js"])
   if (fs.existsSync(nm("tesseract.js-core/" + f))) cp("tesseract.js-core/" + f, "tesseract/" + f);
-cp("@tesseract.js-data/tur/4.0.0_best_int/tur.traineddata.gz", "tesseract/lang/tur.traineddata.gz");
+// Android packaging unzips .gz assets and drops the suffix, so ship the plain file and load it with gzip:false.
+fs.mkdirSync(out("tesseract/lang"), { recursive: true });
+fs.writeFileSync(out("tesseract/lang/tur.traineddata"), require("zlib").gunzipSync(fs.readFileSync(nm("@tesseract.js-data/tur/4.0.0_best_int/tur.traineddata.gz"))));
 const fonts = [
   ["barlow-condensed", "Barlow Condensed", [600, 700]],
   ["barlow", "Barlow", [400, 500, 600, 700]],

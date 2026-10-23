@@ -1281,7 +1281,7 @@ const BRANDS=["BOSCH","TRW","FEBI","FEBI BILSTEIN","MANN","MANN-FILTER","MAHLE",
 let ocrWorker=null,ocrTarget="pName",ocrItems=[];
 async function getOcr(){
   if(ocrWorker)return ocrWorker;
-  ocrWorker=await Tesseract.createWorker("tur",1,{workerPath:"vendor/tesseract/worker.min.js",corePath:"vendor/tesseract",langPath:"vendor/tesseract/lang",gzip:true,workerBlobURL:false,cacheMethod:"none"});
+  ocrWorker=await Tesseract.createWorker("tur",1,{workerPath:"vendor/tesseract/worker.min.js",corePath:"vendor/tesseract",langPath:"vendor/tesseract/lang",gzip:false,workerBlobURL:false,cacheMethod:"none"});
   return ocrWorker;
 }
 async function snapForOcr(){
