@@ -7,8 +7,9 @@ android {
         applicationId "com.serhattutak.servisdepo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
-        versionName "1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+        def runNo = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
+        versionCode = Integer.parseInt(runNo)
+        versionName = "1.0." + runNo
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
