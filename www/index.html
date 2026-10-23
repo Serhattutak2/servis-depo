@@ -6,10 +6,11 @@
 <meta name="color-scheme" content="light dark">
 <title>Servis Depo</title>
 <link rel="stylesheet" href="vendor/fonts.css">
-<script src="vendor/jsQR.js"></script>
-<script src="vendor/zxing.min.js"></script>
-<script src="vendor/qrcode.js"></script>
-<script src="vendor/tesseract/tesseract.min.js"></script>
+<script src="vendor/capacitor.js"></script>
+<script src="vendor/build.js"></script>
+<script defer src="vendor/jsQR.js"></script>
+<script defer src="vendor/zxing.min.js"></script>
+<script defer src="vendor/qrcode.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box}
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);-webkit-text-size-adjust:100%}
@@ -170,6 +171,16 @@ label.btn{user-select:none}
 .scanbar.top{top:0;padding-top:calc(18px + env(safe-area-inset-top,0px));color:#fff;font:600 17px var(--body);text-align:center;text-shadow:0 1px 3px #000}
 .scanbar.bottom{bottom:0;padding-bottom:calc(22px + env(safe-area-inset-bottom,0px))}
 .scanbar .btn{min-width:96px}
+.suggest{display:grid;border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden}
+.suggest:empty{display:none}
+.suggest .item{padding:11px 14px}
+.btn.wa{background:#1FA855;border-color:#1FA855;color:#fff}
+.btn.wa2{border-color:#1FA855;color:#178C46}
+html.native-scan,html.native-scan body{background:transparent!important}
+html.native-scan body::before{display:none}
+html.native-scan body>*:not(#scanner){visibility:hidden}
+html.native-scan #scanner{background:transparent}
+html.native-scan #scanVideo{display:none}
 .ocrwords .chipbtn{font-family:var(--mono);font-size:13px}
 </style>
 </head>
@@ -193,6 +204,7 @@ label.btn{user-select:none}
 
 <input type="file" id="cam" class="file-hidden" accept="image/*" capture="environment" aria-label="Fotoğraf çek">
 <input type="file" id="gal" class="file-hidden" accept="image/*" aria-label="Galeriden seç">
+<input type="file" id="ocrCam" class="file-hidden" accept="image/*" capture="environment" aria-label="Kutu fotoğrafı">
 <input type="file" id="restoreIn" class="file-hidden" accept=".json,application/json" aria-label="Yedek dosyası">
 <div id="scanner" class="scanner" hidden>
   <video id="scanVideo" playsinline muted></video>
@@ -202,7 +214,6 @@ label.btn{user-select:none}
     <button class="btn" data-act="scan-close">Kapat</button>
     <button class="btn" id="scanTorch" data-act="torch" hidden>Fener</button>
     <label class="btn" for="gal">Galeri</label>
-    <button class="btn pri" id="scanShot" data-act="scan-shot" hidden>Çek</button>
   </div>
 </div>
 <div id="sheetRoot"></div>
@@ -221,6 +232,7 @@ const IC={
   find:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/></svg>`,
   count:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>`,
   cam:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="M8 12h8"/></svg>`,
+  wa:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z"/></svg>`,
   check:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg>`,
 };
 const S={products:new Map(),vehicles:new Map(),shelves:new Map(),orders:new Map(),staff:new Map(),moves:[],settings:{},
@@ -408,7 +420,7 @@ function countBody(){
 }
 
 /* ================= İŞ EMRİ ================= */
-const MODELS=["Fiat Egea","Fiat Doblo","Fiat Fiorino","Fiat Linea","Fiat Palio","Fiat Punto","Fiat 500","Renault Clio","Renault Megane","Renault Symbol","Renault Fluence","Renault Taliant","Renault Kangoo","Renault Captur","Renault Austral","Dacia Duster","Dacia Sandero","Dacia Logan","Dacia Jogger","Toyota Corolla","Toyota C-HR","Toyota Yaris","Toyota Auris","Toyota Hilux","Toyota RAV4","Ford Focus","Ford Fiesta","Ford Mondeo","Ford Kuga","Ford Puma","Ford Courier","Ford Tourneo Connect","Ford Transit Connect","Ford Transit Custom","Ford Transit","Ford Ranger","Volkswagen Golf","Volkswagen Polo","Volkswagen Passat","Volkswagen Jetta","Volkswagen T-Roc","Volkswagen Tiguan","Volkswagen Caddy","Volkswagen Transporter","Volkswagen Amarok","Hyundai i10","Hyundai i20","Hyundai Accent Blue","Hyundai Elantra","Hyundai Tucson","Hyundai Bayon","Honda Civic","Honda City","Honda Jazz","Honda CR-V","Opel Astra","Opel Corsa","Opel Insignia","Opel Mokka","Opel Combo","Peugeot 208","Peugeot 301","Peugeot 308","Peugeot 2008","Peugeot 3008","Peugeot 5008","Peugeot Partner","Peugeot Rifter","Citroen C-Elysee","Citroen C3","Citroen C4","Citroen C5 Aircross","Citroen Berlingo","Skoda Octavia","Skoda Superb","Skoda Fabia","Skoda Scala","Skoda Kamiq","Skoda Karoq","Seat Leon","Seat Ibiza","Seat Arona","Kia Rio","Kia Ceed","Kia Sportage","Kia Stonic","Kia Picanto","Nissan Qashqai","Nissan Juke","Nissan Micra","Nissan Navara","Mitsubishi L200","Isuzu D-Max","Suzuki Vitara","Suzuki Swift","Mazda 3","Mazda CX-5","Chery Tiggo 7 Pro","Chery Tiggo 8 Pro","MG ZS","MG HS","BYD Atto 3","Togg T10X","Tesla Model Y","BMW 1 Serisi","BMW 3 Serisi","BMW 5 Serisi","BMW X1","Mercedes A Serisi","Mercedes C Serisi","Mercedes E Serisi","Mercedes Sprinter","Mercedes Vito","Audi A3","Audi A4","Audi A6","Audi Q3","Volvo XC40","Volvo S60","Jeep Renegade","Cupra Formentor"];
+const MODELS=["Alfa Romeo 147", "Alfa Romeo 156", "Alfa Romeo 159", "Alfa Romeo Giulietta", "Alfa Romeo Giulia", "Alfa Romeo MiTo", "Alfa Romeo Stelvio", "Alfa Romeo Tonale", "Audi A1", "Audi A3", "Audi A4", "Audi A5", "Audi A6", "Audi A7", "Audi A8", "Audi Q2", "Audi Q3", "Audi Q5", "Audi Q7", "Audi Q8", "Audi TT", "Audi e-tron", "BMW 1 Serisi", "BMW 2 Serisi", "BMW 3 Serisi", "BMW 4 Serisi", "BMW 5 Serisi", "BMW 7 Serisi", "BMW X1", "BMW X2", "BMW X3", "BMW X4", "BMW X5", "BMW X6", "BMW iX", "BMW i4", "BMW Mini Cooper", "BYD Atto 3", "BYD Seal", "BYD Dolphin", "BYD Seal U", "Chery Tiggo 4 Pro", "Chery Tiggo 7 Pro", "Chery Tiggo 8 Pro", "Chery Omoda 5", "Chevrolet Aveo", "Chevrolet Cruze", "Chevrolet Captiva", "Chevrolet Lacetti", "Chevrolet Spark", "Chevrolet Kalos", "Chevrolet Epica", "Chevrolet Trax", "Citroen C-Elysee", "Citroen C1", "Citroen C2", "Citroen C3", "Citroen C3 Aircross", "Citroen C4", "Citroen C4 Picasso", "Citroen C4 X", "Citroen C5", "Citroen C5 Aircross", "Citroen Berlingo", "Citroen Nemo", "Citroen Jumpy", "Citroen Jumper", "Citroen Xsara", "Citroen Saxo", "Citroen Ami", "Cupra Formentor", "Cupra Born", "Cupra Leon", "Dacia Duster", "Dacia Sandero", "Dacia Sandero Stepway", "Dacia Logan", "Dacia Jogger", "Dacia Lodgy", "Dacia Dokker", "Dacia Spring", "Daewoo Lanos", "Daewoo Nubira", "Daewoo Matiz", "Daewoo Tico", "DS DS 3", "DS DS 4", "DS DS 7", "Fiat Egea", "Fiat Egea Cross", "Fiat Egea Hatchback", "Fiat Egea SW", "Fiat Doblo", "Fiat Doblo Cargo", "Fiat Fiorino", "Fiat Linea", "Fiat Palio", "Fiat Albea", "Fiat Punto", "Fiat Grande Punto", "Fiat Bravo", "Fiat Brava", "Fiat Marea", "Fiat Siena", "Fiat Stilo", "Fiat Tipo", "Fiat Tempra", "Fiat Uno", "Fiat Panda", "Fiat 500", "Fiat 500X", "Fiat 500L", "Fiat Ducato", "Fiat Scudo", "Fiat Qubo", "Fiat Sedici", "Fiat Şahin", "Fiat Doğan", "Fiat Kartal", "Fiat Murat 131", "Ford Fiesta", "Ford Focus", "Ford Mondeo", "Ford Kuga", "Ford Puma", "Ford EcoSport", "Ford B-Max", "Ford C-Max", "Ford S-Max", "Ford Galaxy", "Ford Ka", "Ford Escort", "Ford Courier", "Ford Tourneo Courier", "Ford Tourneo Connect", "Ford Tourneo Custom", "Ford Transit", "Ford Transit Connect", "Ford Transit Courier", "Ford Transit Custom", "Ford Ranger", "Ford Mustang", "Honda Civic", "Honda City", "Honda Jazz", "Honda Accord", "Honda CR-V", "Honda HR-V", "Honda ZR-V", "Hyundai i10", "Hyundai i20", "Hyundai i30", "Hyundai Accent", "Hyundai Accent Blue", "Hyundai Accent Era", "Hyundai Elantra", "Hyundai Getz", "Hyundai Tucson", "Hyundai Santa Fe", "Hyundai Kona", "Hyundai Bayon", "Hyundai Ioniq", "Hyundai Ioniq 5", "Hyundai ix35", "Hyundai Starex", "Hyundai H100", "Hyundai H350", "Isuzu D-Max", "Isuzu NPR", "Isuzu NKR", "Iveco Daily", "Jeep Renegade", "Jeep Compass", "Jeep Cherokee", "Jeep Grand Cherokee", "Jeep Wrangler", "Jeep Avenger", "Kia Picanto", "Kia Rio", "Kia Ceed", "Kia Cerato", "Kia Stonic", "Kia XCeed", "Kia Sportage", "Kia Sorento", "Kia Niro", "Kia Venga", "Kia Soul", "Kia EV6", "Land Rover Defender", "Land Rover Discovery", "Land Rover Discovery Sport", "Land Rover Range Rover Evoque", "Land Rover Range Rover Sport", "Land Rover Range Rover Velar", "Lexus CT", "Lexus IS", "Lexus NX", "Lexus RX", "Lexus UX", "Mazda 2", "Mazda 3", "Mazda 6", "Mazda CX-3", "Mazda CX-30", "Mazda CX-5", "Mercedes A Serisi", "Mercedes B Serisi", "Mercedes C Serisi", "Mercedes E Serisi", "Mercedes S Serisi", "Mercedes CLA", "Mercedes CLS", "Mercedes GLA", "Mercedes GLB", "Mercedes GLC", "Mercedes GLE", "Mercedes ML", "Mercedes Vito", "Mercedes V Serisi", "Mercedes Sprinter", "Mercedes Citan", "MG ZS", "MG HS", "MG MG4", "MG Marvel R", "Mini Cooper", "Mini Countryman", "Mini Clubman", "Mitsubishi L200", "Mitsubishi ASX", "Mitsubishi Space Star", "Mitsubishi Colt", "Mitsubishi Lancer", "Mitsubishi Outlander", "Mitsubishi Eclipse Cross", "Nissan Micra", "Nissan Note", "Nissan Juke", "Nissan Qashqai", "Nissan X-Trail", "Nissan Navara", "Nissan Almera", "Nissan Primera", "Nissan Leaf", "Opel Corsa", "Opel Astra", "Opel Vectra", "Opel Insignia", "Opel Mokka", "Opel Crossland", "Opel Grandland", "Opel Meriva", "Opel Zafira", "Opel Combo", "Opel Vivaro", "Opel Movano", "Opel Tigra", "Opel Adam", "Opel Agila", "Peugeot 106", "Peugeot 206", "Peugeot 207", "Peugeot 208", "Peugeot 2008", "Peugeot 301", "Peugeot 306", "Peugeot 307", "Peugeot 308", "Peugeot 3008", "Peugeot 405", "Peugeot 406", "Peugeot 407", "Peugeot 408", "Peugeot 508", "Peugeot 5008", "Peugeot Partner", "Peugeot Rifter", "Peugeot Bipper", "Peugeot Expert", "Peugeot Traveller", "Peugeot Boxer", "Porsche Cayenne", "Porsche Macan", "Porsche Panamera", "Porsche Taycan", "Porsche 911", "Renault Clio", "Renault Clio Symbol", "Renault Symbol", "Renault Megane", "Renault Megane Sedan", "Renault Fluence", "Renault Taliant", "Renault Captur", "Renault Kadjar", "Renault Koleos", "Renault Austral", "Renault Scenic", "Renault Laguna", "Renault Latitude", "Renault Twingo", "Renault Kangoo", "Renault Trafic", "Renault Master", "Renault Express", "Renault Zoe", "Renault Toros", "Renault Broadway", "Renault 12", "Seat Ibiza", "Seat Leon", "Seat Toledo", "Seat Cordoba", "Seat Altea", "Seat Arona", "Seat Ateca", "Seat Tarraco", "Skoda Fabia", "Skoda Rapid", "Skoda Scala", "Skoda Octavia", "Skoda Superb", "Skoda Kamiq", "Skoda Karoq", "Skoda Kodiaq", "Skoda Yeti", "Skoda Enyaq", "Smart Fortwo", "Smart Forfour", "Ssangyong Korando", "Ssangyong Rexton", "Ssangyong Tivoli", "Ssangyong Actyon", "Subaru Forester", "Subaru Impreza", "Subaru XV", "Subaru Outback", "Suzuki Swift", "Suzuki Vitara", "Suzuki SX4", "Suzuki S-Cross", "Suzuki Jimny", "Suzuki Ignis", "Suzuki Splash", "Suzuki Alto", "Tesla Model 3", "Tesla Model Y", "Togg T10X", "Togg T10F", "Toyota Corolla", "Toyota Corolla Cross", "Toyota Auris", "Toyota Yaris", "Toyota Yaris Cross", "Toyota C-HR", "Toyota RAV4", "Toyota Avensis", "Toyota Verso", "Toyota Prius", "Toyota Hilux", "Toyota Land Cruiser", "Toyota Proace", "Toyota Proace City", "Toyota Camry", "Volkswagen Polo", "Volkswagen Golf", "Volkswagen Jetta", "Volkswagen Passat", "Volkswagen Passat CC", "Volkswagen Bora", "Volkswagen Scirocco", "Volkswagen Arteon", "Volkswagen T-Roc", "Volkswagen T-Cross", "Volkswagen Taigo", "Volkswagen Tiguan", "Volkswagen Touareg", "Volkswagen Touran", "Volkswagen Caddy", "Volkswagen Transporter", "Volkswagen Caravelle", "Volkswagen Crafter", "Volkswagen Amarok", "Volkswagen Up", "Volkswagen ID.3", "Volkswagen ID.4", "Volvo S40", "Volvo S60", "Volvo S80", "Volvo S90", "Volvo V40", "Volvo V60", "Volvo XC40", "Volvo XC60", "Volvo XC90"];
 const FUELS=["Benzin","Dizel","LPG","Hibrit","Elektrik"];
 const SCHEDULE=[
   {t:"Yağ + filtre değişimi",km:{def:10000,Dizel:15000},skip:["Elektrik"]},
@@ -511,17 +523,26 @@ function totHtml(){
     <div class="totrow"><span>KDV %20</span><span>${money(t.kdv)}</span></div>
     <div class="totrow grand"><span>Toplam</span><span>${money(t.tot)}</span></div></div>`;
 }
+function fuelHtml(){return FUELS.map(f=>`<button class="chipbtn" type="button" data-act="wo-fuel" data-f="${f}" aria-pressed="${wo.fuel===f}">${f}</button>`).join("");}
+function staffHtml(){const st=[...S.staff.values()];return st.length?st.map(s=>`<button class="chipbtn" type="button" data-act="wo-staff" data-id="${esc(s.id)}" aria-pressed="${wo.staff.includes(s.id)}">${esc(s.name)}</button>`).join(""):`<span class="muted">Ayarlar › Personel'den ekle.</span>`;}
+function tasksHtml(){const o=wo;return `${o.tasks.length?`<div>${o.tasks.map((t,i)=>`<div class="chk"><input type="checkbox" id="wt${i}" data-act="wo-task" data-i="${i}" ${t.done?"checked":""} aria-label="Yapıldı"><label for="wt${i}" class="grow" style="${t.done?"text-decoration:line-through;color:var(--muted)":""}">${esc(t.t)}</label><input class="price" id="tp${i}" inputmode="decimal" value="${priceVal(t.price)}" placeholder="₺" data-in="tprice" data-i="${i}" aria-label="${esc(t.t)} fiyatı"><button class="btn sm link" data-act="wo-task-del" data-i="${i}" aria-label="Sil">Sil</button></div>`).join("")}</div>`:""}
+    <div class="chips">${QUICK.filter(q=>!o.tasks.some(t=>t.t===q)).map(t=>`<button class="chipbtn" type="button" data-act="wo-quick" data-t="${esc(t)}">+ ${esc(t)}</button>`).join("")}</div>`;}
+function partsHtml(){const o=wo;return `${o.parts.length?`<div>${o.parts.map((p,i)=>`<div class="chk"><span class="grow">${esc(p.name)} <span class="muted">×${p.qty}${p.manual?"":" · depodan"}</span></span><input class="price" id="pp${i}" inputmode="decimal" value="${priceVal(p.price)}" placeholder="₺" data-in="pprice" data-i="${i}" aria-label="${esc(p.name)} birim fiyatı">${p.manual?`<button class="btn sm link" data-act="wo-part-del" data-i="${i}">Sil</button>`:""}</div>`).join("")}</div>`:""}`;}
+function woRefresh(){
+  const set=(id,h)=>{const e=document.getElementById(id);if(e)e.innerHTML=h;};
+  set("woFuel",fuelHtml());set("woTasks",tasksHtml());set("woParts",partsHtml());set("woStaff",staffHtml());set("woSug",sugHtml());set("woTot",totHtml());
+}
 function drawWo(){
   const o=wo,st=[...S.staff.values()],keep=!!$("#woPlate");
   openSheet(`${sheetHd(o.id?`<span class="tag">${esc(o.plate||o.no)}</span> iş emri`:"Araç geldi")}
   <label class="f">Plaka <input id="woPlate" class="huge mono" value="${esc(o.plate)}" placeholder="34 ABC 123" style="text-transform:uppercase" data-in="woplate" autocomplete="off"></label>
   <div id="woHist">${historyHtml()}</div>
   <div class="card stack"><b>Araç</b>
-    <label class="f">Marka model <input id="woModel" list="modelList" value="${esc(o.model)}" placeholder="Yazmaya başla: Egea, Focus…" data-in="womodel" autocomplete="off"></label>
-    <datalist id="modelList">${allModels().map(m=>`<option value="${esc(m)}"></option>`).join("")}</datalist>
+    <div class="stack" style="gap:6px"><label class="f">Marka model <input id="woModel" value="${esc(o.model)}" placeholder="Yaz: egea, focus, clio…" data-in="womodel" autocomplete="off" autocapitalize="words"></label>
+    <div id="modelSug" class="suggest"></div></div>
     <div class="grid2"><label class="f">Model yılı <input id="woYear" inputmode="numeric" maxlength="4" value="${esc(o.year)}" placeholder="2018"></label>
     <label class="f">Kilometre <input id="woKm" inputmode="numeric" value="${kmFmt(o.km)}" placeholder="38.110" data-in="km" autocomplete="off"></label></div>
-    <div class="chips" role="group" aria-label="Yakıt">${FUELS.map(f=>`<button class="chipbtn" type="button" data-act="wo-fuel" data-f="${f}" aria-pressed="${o.fuel===f}">${f}</button>`).join("")}</div>
+    <div class="chips" role="group" aria-label="Yakıt" id="woFuel">${fuelHtml()}</div>
   </div>
   <div id="woExp">${expHtml()}</div>
   <div class="card stack"><b>Araç sahibi</b><div class="grid2">
@@ -530,21 +551,28 @@ function drawWo(){
   <label class="f">Şikayet <textarea id="woComp" placeholder="Frenden ses geliyor, periyodik bakım…">${esc(o.complaint)}</textarea></label>
   <div class="card stack"><div class="sectionhd"><b>Yapılacaklar</b><span class="muted" style="font-size:13px">Fiyatlar KDV hariç</span></div>
     <div id="woSug">${sugHtml()}</div>
-    ${o.tasks.length?`<div>${o.tasks.map((t,i)=>`<div class="chk"><input type="checkbox" id="wt${i}" data-act="wo-task" data-i="${i}" ${t.done?"checked":""} aria-label="Yapıldı"><label for="wt${i}" class="grow" style="${t.done?"text-decoration:line-through;color:var(--muted)":""}">${esc(t.t)}</label><input class="price" id="tp${i}" inputmode="decimal" value="${priceVal(t.price)}" placeholder="₺" data-in="tprice" data-i="${i}" aria-label="${esc(t.t)} fiyatı"><button class="btn sm link" data-act="wo-task-del" data-i="${i}" aria-label="Sil">Sil</button></div>`).join("")}</div>`:""}
-    <div class="chips">${QUICK.filter(q=>!o.tasks.some(t=>t.t===q)).map(t=>`<button class="chipbtn" type="button" data-act="wo-quick" data-t="${esc(t)}">+ ${esc(t)}</button>`).join("")}</div>
+    <div id="woTasks">${tasksHtml()}</div>
     <form class="row" data-form="wotask"><input id="woTaskIn" class="grow" placeholder="Başka iş yaz"><button class="btn">Ekle</button></form></div>
   <div class="card stack"><div class="sectionhd"><b>Parçalar</b><span class="muted" style="font-size:13px">Birim fiyat, KDV hariç</span></div>
-    ${o.parts.length?`<div>${o.parts.map((p,i)=>`<div class="chk"><span class="grow">${esc(p.name)} <span class="muted">×${p.qty}${p.manual?"":" · depodan"}</span></span><input class="price" id="pp${i}" inputmode="decimal" value="${priceVal(p.price)}" placeholder="₺" data-in="pprice" data-i="${i}" aria-label="${esc(p.name)} birim fiyatı">${p.manual?`<button class="btn sm link" data-act="wo-part-del" data-i="${i}">Sil</button>`:""}</div>`).join("")}</div>`:""}
+    <div id="woParts">${partsHtml()}</div>
     ${o.id?`<button class="btn sm" type="button" data-act="wo-out">Depodan parça al (raftan düşer)</button>`:`<div class="muted" style="font-size:13px">Kaydettikten sonra depodan parça alabilirsin.</div>`}
     <form class="row" data-form="wopart"><input id="mpName" class="grow" placeholder="Dışarıdan alınan parça" style="flex-basis:160px"><input id="mpQty" inputmode="numeric" value="1" style="width:60px" aria-label="Adet"><input id="mpPrice" class="price" inputmode="decimal" placeholder="₺" aria-label="Birim fiyat"><button class="btn">Ekle</button></form></div>
   <div class="card" id="woTot">${totHtml()}</div>
   <label class="f">Usta notu · tecrübe <textarea id="woNotes" placeholder="Ne bulundu? Bu modelde dikkat edilecek şey… Aynı model gelince gösterilir.">${esc(o.notes)}</textarea></label>
-  <div class="stack" style="gap:6px"><b>Kim yapacak?</b><div class="chips">${st.length?st.map(s=>`<button class="chipbtn" type="button" data-act="wo-staff" data-id="${esc(s.id)}" aria-pressed="${o.staff.includes(s.id)}">${esc(s.name)}</button>`).join(""):`<span class="muted">Ayarlar › Personel'den ekle.</span>`}</div></div>
+  <div class="stack" style="gap:6px"><b>Kim yapacak?</b><div class="chips" id="woStaff">${staffHtml()}</div></div>
   <div class="row"><label class="chk grow" style="border:0;padding:0"><input type="checkbox" id="woApproved" ${o.approved?"checked":""}><span>Müşteri fiyatı onayladı</span></label>
     <select id="woStatus" style="width:auto" aria-label="Durum">${Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${o.status===k?"selected":""}>${v}</option>`).join("")}</select></div>
   <button class="btn pri big" data-act="wo-send">Kaydet ve gönder</button>
   <div class="grid2"><button class="btn" data-act="wo-save">Sadece kaydet</button>${o.status!=="tamam"?`<button class="btn okb" data-act="wo-finish">Araç bitti · teslim</button>`:""}</div>
   ${o.id?`<button class="btn sm danger" data-act="wo-del" style="justify-self:start">İş emrini sil</button>`:""}`,keep);
+}
+function modelSugHtml(q){
+  const words=norm(q).split(" ").filter(Boolean);if(!words.length)return "";
+  const qn=norm(q),score=m=>{const n=norm(m),parts=n.split(" "),used=new Set();let sc=n.startsWith(qn)?20:0;
+    for(const w of words){const i=parts.findIndex((p,j)=>!used.has(j)&&p.startsWith(w));if(i>=0){used.add(i);sc+=w.length>=2?3:1;}else if(n.includes(w))sc+=1;else return -1;}return sc;};
+  const hits=allModels().map(m=>[m,score(m)]).filter(x=>x[1]>=0).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],"tr")).map(x=>x[0]);
+  if(hits.length===1&&norm(hits[0])===norm(q))return "";
+  return hits.slice(0,8).map(m=>`<button class="item" type="button" data-act="model-pick" data-m="${esc(m)}"><span class="grow">${esc(m)}</span></button>`).join("")||`<div class="muted" style="font-size:13px;padding:6px 2px">Listede yok; yazdığın gibi kaydedilir.</div>`;
 }
 function allModels(){const s=new Set(MODELS);[...S.orders.values()].forEach(o=>{const m=carOf(o).trim();if(m)s.add(m);});return [...s].sort((a,b)=>a.localeCompare(b,"tr"));}
 function readWo(){
@@ -597,11 +625,14 @@ function woStaffText(o){
   return L.join("\n");
 }
 function waNum(ph){let d=String(ph||"").replace(/\D/g,"");if(d.startsWith("0"))d="90"+d.slice(1);else if(d.length===10&&d.startsWith("5"))d="90"+d;return d;}
-function waBtn(p,txt,label){return p.phone?`<a class="btn pri" href="https://wa.me/${waNum(p.phone)}?text=${encodeURIComponent(txt)}">${label||"WhatsApp: "+esc(p.name||p.phone)}</a>`:"";}
+function waBtn(p,txt,label){return p.phone?`<button class="btn pri wa" data-act="open-url" data-url="${esc(`https://wa.me/${waNum(p.phone)}?text=${encodeURIComponent(txt)}`)}">${IC.wa}${label||"WhatsApp: "+esc(p.name||p.phone)}</button>`:"";}
+function sendRow(tid,people,txt){return `<div class="stack" style="gap:8px">${people.map(p=>waBtn(p,txt)).join("")}
+  <div class="grid2"><button class="btn wa2" data-act="wa-pick" data-target="${tid}">${IC.wa}WhatsApp'ta kişi seç</button><button class="btn" data-act="share-text" data-target="${tid}">Diğer uygulamalar</button></div>
+  <button class="btn sm" data-act="copy" data-target="${tid}">Metni kopyala</button></div>`;}
 function msgBlock(key,title,sub,txt,people){
   return `<div class="card stack"><div><b>${title}</b><div class="muted" style="font-size:14px">${sub}</div></div>
   <details class="more"><summary>Mesajı gör</summary><textarea id="mt-${key}" readonly style="min-height:220px;font-size:14px">${esc(txt)}</textarea></details>
-  <div class="row">${people.map(p=>waBtn(p,txt)).join("")}<button class="btn" data-act="copy" data-target="mt-${key}">Kopyala</button></div></div>`;
+  ${sendRow("mt-"+key,people,txt)}</div>`;
 }
 function sendSheet(){
   const o=wo,owner={name:o.owner||"Araç sahibi",phone:o.phone};
@@ -613,13 +644,12 @@ function sendSheet(){
   ${o.status!=="tamam"?msgBlock("q","Araç sahibine fiyat teklifi","Yapılacaklar, fiyatlar, KDV ve toplam. “Onay” yazmasını ister.",woQuoteText(o),o.phone?[owner]:[]):""}
   ${msgBlock("r","Araç sahibine “aracınız hazır”","Yapılanlar, toplam tutar ve sonraki bakım km'si.",woReadyText(o),o.phone?[owner]:[])}
   ${msgBlock("s","Ustaya iş listesi","Fiyatsız; yapılacaklar ve parçalar.",woStaffText(o),staff)}
-  <p class="muted" style="margin:0;font-size:14px">WhatsApp butonu mesajı bu telefondaki WhatsApp'ta hazır açar; senin hattından gider. Gönder'e sen basarsın.</p>`);
+  <p class="muted" style="margin:0;font-size:14px">Mesaj senin WhatsApp'ında hazır açılır. Numarası kayıtlı değilse “WhatsApp'ta kişi seç” ile rehberden seç. Gönder'e sen basarsın.</p>`);
 }
 function shareSheet(title,txt,people,note){
   openSheet(`${sheetHd(title)}
   <textarea id="shareTxt" readonly style="min-height:170px;font-size:15px">${esc(txt)}</textarea>
-  ${people.length?`<div class="row">${people.map(p=>waBtn(p,txt)).join("")}</div>`:""}
-  <button class="btn" data-act="copy" data-target="shareTxt">Metni kopyala</button>
+  ${sendRow("shareTxt",people,txt)}
   <p class="muted" style="margin:0;font-size:14px">${note||"WhatsApp mesaj hazır açılır; göndermek için oradan Gönder'e bas."}</p>`);
 }
 async function aiModel(){
@@ -669,6 +699,7 @@ function vAyar(){
     <div class="card stack"><h3>Yedek</h3>
       <p class="muted" style="margin:0;font-size:14px">Bütün kayıtlar bu telefonun hafızasında. Haftada bir yedek al ve WhatsApp'ta kendine ya da Google Drive'a gönder. Telefon bozulursa yeni telefonda “Yedekten yükle” ile her şey geri gelir. Uygulama ayrıca son 7 günün otomatik yedeğini telefonda tutar.</p>
       <div style="font-size:14px">Son yedek: <b>${st.lastBackup?new Date(st.lastBackup).toLocaleString("tr-TR"):"hiç alınmadı"}</b></div>
+      <div class="muted" style="font-size:13px">Sürüm ${esc(window.APP_BUILD||"")}${S.errors&&S.errors.length?` · Son hata: ${esc(S.errors[S.errors.length-1])}`:""}</div>
       <div class="grid2"><button class="btn pri" data-act="backup">Yedek al ve gönder</button><label class="btn" for="restoreIn">Yedekten yükle</label></div></div>
     <div class="stack"><h3>Hatırlanan işçilik fiyatları</h3><p class="muted" style="margin:0;font-size:14px">İş emrinde yazdığın son fiyat kaydedilir; aynı iş eklenince otomatik gelir. KDV hariç.</p>
     ${lab.length?`<div class="list">${lab.map(([t,v])=>`<div class="item" style="cursor:default"><span class="grow">${esc(t)}</span><b>${money(v)}</b></div>`).join("")}</div>`:`<div class="card empty">Henüz fiyat yok.</div>`}</div>`;
@@ -705,7 +736,7 @@ function prodForm(p,opts={}){
   const codes=[...(p.codes||[]),...(opts.code&&!(p.codes||[]).includes(opts.code)?[opts.code]:[])];
   openSheet(`${sheetHd(isNew?"Yeni ürün":"Ürünü düzenle")}
   ${isNew&&opts.code?`<div class="notice info">Bu kod kayıtlı değil: <b class="mono">${esc(opts.code)}</b></div>`:""}
-  <button class="btn pri big" type="button" data-act="ocr-start">${IC.cam}Kutunun yazılarını oku</button>
+  <label class="btn pri big" for="ocrCam" role="button" tabindex="0">${IC.cam}Kutunun yazılarını oku</label>
   <div id="ocrOut"></div>
   <form class="stack" data-form="prod" data-id="${esc(p.id||"")}">
     <label class="f">Ürün adı * <input id="pName" required value="${esc(p.name)}" placeholder="Ön fren balatası"></label>
@@ -927,6 +958,7 @@ function handleCode(raw){
   } else if(t.kind==="in"){
     if(r.kind==="shelf"){if(!t.pid){toast("Önce kutuyu okut");return;}putAway(r.code);}
     else if(r.kind==="prod"){t.pid=r.id;t.qty=1;render();}
+    else if(t.pid&&/^[A-ZÇĞİÖŞÜ]{1,4}-?\d{1,3}(-\d{1,2})?$/i.test(String(raw).trim()))putAway(shelfCode(raw));
     else prodForm(null,{code:r.code});
   } else if(t.kind==="out"){
     if(r.kind==="shelf"){t.shelf=r.code;t.pid=null;render();}
@@ -998,11 +1030,13 @@ document.addEventListener("click",async ev=>{
     case "task-next":{const t=S.task;S.last=null;t.done=null;t.pid=null;t.qty=1;if(t.kind==="count"){t.shelf=null;t.seen={};}render();break;}
     case "undo":el.disabled=true;await undo();break;
     case "cam":$("#cam").click();break;
-    case "scan":openScanner("code");break;
-    case "ocr-start":openScanner("ocr");break;
+    case "scan":openScanner();break;
+    case "model-pick":{readWo();wo.model=el.dataset.m;const i=$("#woModel");if(i)i.value=wo.model;$("#modelSug").innerHTML="";const e=$("#woExp");if(e)e.innerHTML=expHtml();break;}
+    case "open-url":openExternal(el.dataset.url);break;
+    case "wa-pick":{const t=document.getElementById(el.dataset.target);if(t)sendWhatsApp("",t.value);break;}
+    case "share-text":{const t=document.getElementById(el.dataset.target);if(t)shareText(t.value);break;}
     case "scan-close":closeScanner();break;
     case "torch":toggleTorch();break;
-    case "scan-shot":snapForOcr();break;
     case "ocr-target":ocrTarget=el.dataset.t;document.querySelectorAll('[data-act="ocr-target"]').forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===ocrTarget)));break;
     case "ocr-word":{const f=document.getElementById(ocrTarget),w=ocrItems[+el.dataset.i];if(f&&w){f.value=(f.value.trim()+" "+w).trim();el.setAttribute("aria-pressed","true");}if(ocrTarget==="pNotes"||ocrTarget==="pPart"){const d=f&&f.closest("details");if(d)d.open=true;}break;}
     case "ocr-clear":{const f=document.getElementById(ocrTarget);if(f)f.value="";document.querySelectorAll('[data-act="ocr-word"]').forEach(b=>b.setAttribute("aria-pressed","false"));break;}
@@ -1045,18 +1079,18 @@ document.addEventListener("click",async ev=>{
     case "wo":woSheet(id);break;
     case "wo-new":woSheet(null);setTimeout(()=>$("#woPlate")?.focus(),50);break;
     case "wof":S.woFilter=el.dataset.f;render();break;
-    case "wo-fuel":readWo();wo.fuel=wo.fuel===el.dataset.f?"":el.dataset.f;drawWo();break;
-    case "wo-sug-all":readWo();suggestions().forEach(x=>addTask(x.t));drawWo();break;
+    case "wo-fuel":readWo();wo.fuel=wo.fuel===el.dataset.f?"":el.dataset.f;woRefresh();break;
+    case "wo-sug-all":readWo();suggestions().forEach(x=>addTask(x.t));woRefresh();break;
     case "wo-ai":aiModel();break;
-    case "wo-part-del":readWo();wo.parts.splice(+el.dataset.i,1);drawWo();break;
+    case "wo-part-del":readWo();wo.parts.splice(+el.dataset.i,1);woRefresh();break;
     case "remind":{const v=S.vehicles.get(el.dataset.k);if(!v)break;shareSheet("Bakım hatırlatma",[`Merhaba${v.owner?" "+v.owner:""},`,"",`${v.plate} ${v.model||""} aracınızın periyodik bakım zamanı ${v.nextDate<Date.now()?"geçti":"yaklaştı"}${v.nextKm?` (${kmFmt(v.nextKm)} km)`:""}. Uygun olduğunuz gün için randevu verebiliriz.`,"",sign()].join("\n").trim(),[{name:v.owner||v.plate,phone:v.phone}]);break;}
-    case "wo-task":readWo();wo.tasks[+el.dataset.i].done=el.checked;drawWo();break;
-    case "wo-task-del":readWo();wo.tasks.splice(+el.dataset.i,1);drawWo();break;
-    case "wo-quick":readWo();addTask(el.dataset.t);drawWo();break;
-    case "wo-staff":readWo();wo.staff=wo.staff.includes(id)?wo.staff.filter(x=>x!==id):[...wo.staff,id];drawWo();break;
+    case "wo-task":readWo();wo.tasks[+el.dataset.i].done=el.checked;woRefresh();break;
+    case "wo-task-del":readWo();wo.tasks.splice(+el.dataset.i,1);woRefresh();break;
+    case "wo-quick":readWo();addTask(el.dataset.t);woRefresh();break;
+    case "wo-staff":readWo();wo.staff=wo.staff.includes(id)?wo.staff.filter(x=>x!==id):[...wo.staff,id];woRefresh();break;
     case "wo-save":if(await saveWo())closeSheet();break;
-    case "wo-finish":if(await saveWo(true))sendSheet();break;
-    case "wo-send":if(await saveWo())sendSheet();break;
+    case "wo-finish":if(await saveWo(true)){sendSheet();sendWhatsApp(wo.phone,woReadyText(wo));}break;
+    case "wo-send":if(await saveWo()){sendSheet();sendWhatsApp(wo.phone,wo.status==="tamam"?woReadyText(wo):woQuoteText(wo));}break;
     case "wo-out":if(await saveWo())startTask("out",{order:wo.id});break;
     case "wo-del":openSheet(`${sheetHd("İş emri silinsin mi?")}<div class="grid2"><button class="btn danger big" data-act="wo-del-ok">Evet, sil</button><button class="btn big" data-act="close">Vazgeç</button></div>`);break;
     case "wo-del-ok":try{await db.doc("orders/"+wo.id).delete();closeSheet();toast("Silindi");}catch(e){fail(e,"Silme");}break;
@@ -1071,14 +1105,14 @@ document.addEventListener("click",async ev=>{
 document.addEventListener("keydown",ev=>{const l=ev.target.closest?.("label.btn[for]");if(l&&(ev.key==="Enter"||ev.key===" ")){ev.preventDefault();document.getElementById(l.htmlFor)?.click();}});
 document.addEventListener("input",ev=>{
   const k=ev.target.dataset?.in;if(!k)return;
-  if(k==="q"){S.q=ev.target.value;render();}
+  if(k==="q"){S.q=ev.target.value;clearTimeout(S.qt);S.qt=setTimeout(render,150);}
   else if(k==="qty"){S.task.qty=Math.max(1,parseInt(ev.target.value)||1);}
   else if(k==="month"){S.month=ev.target.value||S.month;render();}
   else if(k==="woplate"){wo.plate=ev.target.value.toLocaleUpperCase("tr");const pk=plateKey(wo.plate),v=S.vehicles.get(pk);
     if(v&&wo._filled!==pk){wo._filled=pk;readWo();["model","year","fuel","owner","phone"].forEach(f=>{if(!wo[f]&&v[f])wo[f]=v[f];});drawWo();const pe=$("#woPlate");pe.focus();pe.setSelectionRange(pe.value.length,pe.value.length);toast("Kayıtlı araç bilgileri getirildi");return;}
     const h=$("#woHist");if(h)h.innerHTML=historyHtml();const sg=$("#woSug");if(sg)sg.innerHTML=sugHtml();}
   else if(k==="km"){const d=ev.target.value.replace(/\D/g,"").slice(0,7);wo.km=d;ev.target.value=kmFmt(d);const sg=$("#woSug");if(sg)sg.innerHTML=sugHtml();}
-  else if(k==="womodel"){wo.model=ev.target.value;clearTimeout(S.mt);S.mt=setTimeout(()=>{const e=$("#woExp");if(e)e.innerHTML=expHtml();},250);}
+  else if(k==="womodel"){wo.model=ev.target.value;$("#modelSug").innerHTML=modelSugHtml(wo.model);clearTimeout(S.mt);S.mt=setTimeout(()=>{const e=$("#woExp");if(e)e.innerHTML=expHtml();},300);}
   else if(k==="tprice"){const t=wo.tasks[+ev.target.dataset.i];if(t)t.price=parseMoney(ev.target.value);$("#woTot").innerHTML=totHtml();}
   else if(k==="pprice"){const t=wo.parts[+ev.target.dataset.i];if(t)t.price=parseMoney(ev.target.value);$("#woTot").innerHTML=totHtml();}
   else if(k==="pickq"){const q=norm(ev.target.value);document.querySelectorAll("#pickList .item").forEach(b=>b.hidden=!!q&&!b.dataset.k.includes(q));}
@@ -1088,8 +1122,8 @@ document.addEventListener("submit",async ev=>{
   ev.preventDefault();const f=ev.target,k=f.dataset.form;
   if(k==="manual"){const v=$("#manual").value;$("#manual").value="";S.scan=null;handleCode(v);}
   else if(k==="prod")await saveProd(f);
-  else if(k==="wotask"){const v=$("#woTaskIn").value.trim();if(!v)return;readWo();addTask(v);drawWo();$("#woTaskIn")?.focus();}
-  else if(k==="wopart"){const n=$("#mpName").value.trim();if(!n)return;readWo();wo.parts.push({name:n,qty:Math.max(1,parseInt($("#mpQty").value)||1),price:parseMoney($("#mpPrice").value),manual:true});drawWo();$("#mpName")?.focus();}
+  else if(k==="wotask"){const v=$("#woTaskIn").value.trim();if(!v)return;readWo();addTask(v);woRefresh();$("#woTaskIn").value="";}
+  else if(k==="wopart"){const n=$("#mpName").value.trim();if(!n)return;readWo();wo.parts.push({name:n,qty:Math.max(1,parseInt($("#mpQty").value)||1),price:parseMoney($("#mpPrice").value),manual:true});woRefresh();["#mpName","#mpPrice"].forEach(x=>$(x).value="");$("#mpQty").value="1";}
   else if(k==="shop"){if(!db)return;const ns={...S.settings,shopName:$("#shName").value.trim(),shopPhone:$("#shPhone").value.trim(),shopFooter:$("#shFooter").value.trim(),supplierPhone:$("#shSup").value.trim(),labelSize:$("#shLabel").value};try{await db.doc("settings/main").set(ns);S.settings=ns;toast("Kaydedildi");}catch(e){fail(e,"Ayarlar");}}
   else if(k==="staff"){const name=$("#stName").value.trim();if(!name||!db)return;try{await db.collection("staff").add({name,role:$("#stRole").value.trim(),phone:$("#stPhone").value.trim(),createdAt:Date.now()});toast("Eklendi");}catch(e){fail(e,"Personel");}}
   else if(k==="shelfgen")await genShelves();
@@ -1163,7 +1197,8 @@ async function exportCsv(){
 
 /* ================= Telefon: depolama, paylaşma, kamera, yazı okuma ================= */
 const Cap=window.Capacitor,isNative=!!(Cap&&Cap.isNativePlatform&&Cap.isNativePlatform());
-const FS=isNative?Cap.registerPlugin("Filesystem"):null,SH=isNative?Cap.registerPlugin("Share"):null,APP=isNative?Cap.registerPlugin("App"):null;
+const plug=n=>{try{return isNative&&Cap.registerPlugin&&Cap.isPluginAvailable&&Cap.isPluginAvailable(n)?Cap.registerPlugin(n):null;}catch(e){console.warn(e);return null;}};
+const FS=plug("Filesystem"),SH=plug("Share"),APP=plug("App"),BS=plug("BarcodeScanner"),AL=plug("AppLauncher");
 const DB_FILE="servis-depo.json";
 
 function makeDB(){
@@ -1202,6 +1237,7 @@ async function writeText(path,txt,dir){if(FS)return FS.writeFile({path,data:txt,
 async function readText(path,dir){if(FS){const r=await FS.readFile({path,directory:dir||"DATA",encoding:"utf8"});return r.data;}const t=localStorage.getItem("sd:"+path);if(t==null)throw new Error("yok");return t;}
 async function persist(){
   clearTimeout(persistT);
+  if(!S.loadedOnce)return;
   const json=JSON.stringify({app:"servis-depo",v:1,savedAt:Date.now(),data:db._data});
   try{
     await writeText(DB_FILE,json);
@@ -1225,10 +1261,25 @@ const shareFile={
     return {status:"delivered"};
   }
 };
-function openExternal(url){window.location.href=url;}
+async function openExternal(url,fallbackText){
+  if(AL){try{const r=await AL.openUrl({url});if(r&&r.completed===false)throw new Error("açılmadı");return true;}catch(e){console.warn(e);}}
+  else{try{window.open(url,"_blank")||(window.location.href=url);return true;}catch(e){console.warn(e);}}
+  if(fallbackText!=null){await shareText(fallbackText);return false;}
+  toast("WhatsApp açılamadı. Telefonda WhatsApp kurulu mu?");return false;
+}
+function sendWhatsApp(phone,txt){
+  const n=waNum(phone);
+  if(n.length>=11)return openExternal(`https://wa.me/${n}?text=${encodeURIComponent(txt)}`,txt);
+  return openExternal(`whatsapp://send?text=${encodeURIComponent(txt)}`,txt);
+}
+async function shareText(txt){
+  if(SH){try{await SH.share({text:txt,dialogTitle:"Gönder"});}catch(e){if(!/cancel/i.test(e?.message||""))toast("Paylaşılamadı");}return;}
+  try{await navigator.clipboard.writeText(txt);toast("Kopyalandı");}catch{toast("Paylaşım bu cihazda yok");}
+}
 
-/* ---------- Canlı kamera ---------- */
-const SC={stream:null,timer:0,busy:false,mode:"code",tick:0,torch:false};
+/* ---------- Kamera ile okuma ---------- */
+const SC={stream:null,timer:0,busy:false,tick:0,torch:false,native:false,handles:[],done:false};
+const BS_FORMATS=["QR_CODE","EAN_13","EAN_8","UPC_A","UPC_E","CODE_128","CODE_39","CODE_93","ITF","DATA_MATRIX"];
 let bdet=null;
 try{if("BarcodeDetector" in window)bdet=new BarcodeDetector({formats:["qr_code","ean_13","ean_8","code_128","code_39","upc_a","upc_e","itf","data_matrix"]});}catch{bdet=null;}
 function frameCanvas(src,max,crop=1,rot=0){
@@ -1239,54 +1290,90 @@ function frameCanvas(src,max,crop=1,rot=0){
   if(rot){x.translate(h,0);x.rotate(Math.PI/2);}
   x.drawImage(src,sx,sy,cw,ch,0,0,w,h);return c;
 }
-async function openScanner(mode="code"){
-  SC.mode=mode;SC.tick=0;SC.torch=false;
-  const ov=$("#scanner");ov.hidden=false;
-  $("#scanHint").textContent=mode==="ocr"?"Kutunun yazılı yüzünü çerçeveye al, Çek'e bas":"QR veya barkodu çerçevenin içine al";
-  $("#scanShot").hidden=mode!=="ocr";$("#scanFrame").classList.toggle("wide",mode==="ocr");
-  try{
-    SC.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}}});
-  }catch(e){
-    console.warn(e);ov.hidden=true;
-    openSheet(`${sheetHd("Kamera açılamadı")}<p style="margin:0">Uygulamanın kameraya izni yok. Telefonda <b>Ayarlar › Uygulamalar › Servis Depo › İzinler › Kamera</b> yolundan <b>İzin ver</b>'i seç, sonra tekrar dene.</p><label class="btn" for="gal">Bunun yerine galeriden fotoğraf seç</label>`);
-    return;
+function camDenied(){
+  openSheet(`${sheetHd("Kameraya izin yok")}<p style="margin:0">Telefonda <b>Ayarlar › Uygulamalar › Servis Depo › İzinler › Kamera</b> yolundan <b>İzin ver</b>'i seç, sonra tekrar dene.</p><label class="btn" for="gal">Bunun yerine galeriden fotoğraf seç</label>`);
+}
+function onScanned(val){
+  if(SC.done)return;SC.done=true;
+  beep(true);buzz();closeScanner();
+  toast("Okundu: "+String(val).replace(/^MD:[PR]:/,"").slice(0,30));
+  handleCode(val);render();
+}
+async function openScanner(){
+  SC.done=false;SC.torch=false;SC.tick=0;
+  $("#scanHint").textContent="QR veya barkodu çerçevenin içine al";
+  if(BS){
+    try{
+      const perm=await BS.requestPermissions();
+      if(perm.camera!=="granted"&&perm.camera!=="limited"){camDenied();return;}
+      SC.handles=[];
+      SC.handles.push(await BS.addListener("barcodesScanned",ev=>{const b=ev&&ev.barcodes&&ev.barcodes[0];if(b&&(b.rawValue||b.displayValue))onScanned(b.rawValue||b.displayValue);}));
+      SC.handles.push(await BS.addListener("barcodeScanned",ev=>{const b=ev&&ev.barcode;if(b&&(b.rawValue||b.displayValue))onScanned(b.rawValue||b.displayValue);}));
+      document.documentElement.classList.add("native-scan");$("#scanner").hidden=false;SC.native=true;
+      await BS.startScan({formats:BS_FORMATS,lensFacing:"BACK"});
+      try{$("#scanTorch").hidden=!(await BS.isTorchAvailable()).available;}catch{$("#scanTorch").hidden=true;}
+      return;
+    }catch(e){
+      console.warn(e);closeScanner();
+      toast("Kamera açılamadı: "+(e&&e.message||e));return;
+    }
   }
+  // Tarayıcıda çalışırken (deneme) web kamerası
+  const ov=$("#scanner");ov.hidden=false;
+  try{
+    SC.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}}});
+  }catch(e){console.warn(e);ov.hidden=true;camDenied();return;}
   const v=$("#scanVideo");v.srcObject=SC.stream;try{await v.play();}catch{}
   const tr=SC.stream.getVideoTracks()[0],caps=tr.getCapabilities?tr.getCapabilities():{};
   $("#scanTorch").hidden=!caps.torch;
-  try{if((caps.focusMode||[]).includes("continuous"))await tr.applyConstraints({advanced:[{focusMode:"continuous"}]});}catch{}
-  if(mode==="code")scanLoop();
+  scanLoop();
 }
 async function scanLoop(){
-  if(!SC.stream||SC.mode!=="code")return;
+  if(!SC.stream)return;
   const v=$("#scanVideo");
   if(v.readyState>=2&&!SC.busy){
     SC.busy=true;
     try{
       let val=null;
       if(bdet){try{const r=await bdet.detect(v);if(r.length)val=r[0].rawValue;}catch{bdet=null;}}
-      if(!val){const c=frameCanvas(v,960,.8);val=jsqrDecode(c)||zxDecode(c);}
-      if(!val&&SC.tick%3===2){val=zxDecode(frameCanvas(v,960,.8,1));}
+      if(!val){const c=frameCanvas(v,800,.8);val=jsqrDecode(c)||zxDecode(c);}
+      if(!val&&SC.tick%3===2){val=zxDecode(frameCanvas(v,800,.8,1));}
       SC.tick++;
-      if(val){beep(true);buzz();closeScanner();toast("Okundu: "+String(val).replace(/^MD:[PR]:/,"").slice(0,30));handleCode(val);render();return;}
+      if(val){onScanned(val);return;}
     }catch(e){console.warn(e);}finally{SC.busy=false;}
   }
-  SC.timer=setTimeout(scanLoop,90);
+  SC.timer=setTimeout(scanLoop,120);
 }
-function closeScanner(){clearTimeout(SC.timer);if(SC.stream)SC.stream.getTracks().forEach(t=>t.stop());SC.stream=null;$("#scanVideo").srcObject=null;$("#scanner").hidden=true;}
-async function toggleTorch(){const tr=SC.stream&&SC.stream.getVideoTracks()[0];if(!tr)return;SC.torch=!SC.torch;try{await tr.applyConstraints({advanced:[{torch:SC.torch}]});}catch{toast("Fener açılamadı");}}
+function closeScanner(){
+  clearTimeout(SC.timer);
+  if(SC.native){SC.native=false;try{BS.stopScan();}catch{}SC.handles.forEach(h=>{try{h.remove();}catch{}});SC.handles=[];if(SC.torch){try{BS.disableTorch();}catch{}}}
+  document.documentElement.classList.remove("native-scan");
+  if(SC.stream)SC.stream.getTracks().forEach(t=>t.stop());SC.stream=null;
+  const v=$("#scanVideo");if(v)v.srcObject=null;
+  $("#scanner").hidden=true;
+}
+async function toggleTorch(){
+  SC.torch=!SC.torch;
+  try{
+    if(SC.native){await (SC.torch?BS.enableTorch():BS.disableTorch());return;}
+    const tr=SC.stream&&SC.stream.getVideoTracks()[0];if(tr)await tr.applyConstraints({advanced:[{torch:SC.torch}]});
+  }catch{toast("Fener açılamadı");}
+}
 
 /* ---------- Kutudan yazı okuma (internetsiz) ---------- */
 const BRANDS=["BOSCH","TRW","FEBI","FEBI BILSTEIN","MANN","MANN-FILTER","MAHLE","KNECHT","VALEO","SACHS","LEMFÖRDER","LEMFORDER","SKF","GATES","CONTINENTAL","CONTITECH","NGK","DENSO","BREMBO","FERODO","TEXTAR","ATE","FILTRON","HENGST","PURFLUX","CASTROL","SHELL","MOTUL","MOBIL","OPET","PETROL OFISI","LIQUI MOLY","ELRING","REINZ","VICTOR REINZ","CORTECO","INA","LUK","DAYCO","MAGNETI MARELLI","HELLA","OSRAM","PHILIPS","VARTA","MUTLU","İNCİ","INCI","YIGIT","YİĞİT","FORD","MOTORCRAFT","RENAULT","FIAT","TOYOTA","VOLKSWAGEN","VW","OPEL","HYUNDAI","MOBIS","KIA","DELPHI","KYB","KAYABA","MONROE","MEYLE","SWAG","TOPRAN","VAICO","VEMO","NISSENS","BEHR","MAPCO","BLUE PRINT","JAPANPARTS","ASHIKA","OPTIMAL","DOLZ","METELLI","AJUSA","PIERBURG","BERU","CHAMPION","EXIDE","TOTAL","ELF","FRENOTEKS","EKU","HİFLEX","SADECE","OE","MOPAR","PEUGEOT","CITROEN","HONDA","NISSAN","MERCEDES","BMW","AUDI","SKODA","SEAT","DACIA"];
 let ocrWorker=null,ocrTarget="pName",ocrItems=[];
+function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector(`script[src="${src}"]`))return res();const t=document.createElement("script");t.src=src;t.onload=res;t.onerror=()=>rej(new Error(src));document.head.appendChild(t);});}
 async function getOcr(){
   if(ocrWorker)return ocrWorker;
+  await loadScript("vendor/tesseract/tesseract.min.js");
   ocrWorker=await Tesseract.createWorker("tur",1,{workerPath:"vendor/tesseract/worker.min.js",corePath:"vendor/tesseract",langPath:"vendor/tesseract/lang",gzip:false,workerBlobURL:false,cacheMethod:"none"});
   return ocrWorker;
 }
-async function snapForOcr(){
-  const v=$("#scanVideo");if(!SC.stream||v.readyState<2)return;
-  const c=frameCanvas(v,1800,1);closeScanner();runOcr(c);
+async function ocrFromFile(file){
+  const out=$("#ocrOut");if(out)out.innerHTML=`<div class="notice info">Fotoğraf hazırlanıyor…</div>`;
+  const img=await loadImg(file);if(!img){if(out)out.innerHTML=`<div class="notice warn">Fotoğraf açılamadı.</div>`;return;}
+  runOcr(toCanvas(img,1800,1,0));
 }
 function preprocess(c){
   const x=c.getContext("2d",{willReadFrequently:true}),d=x.getImageData(0,0,c.width,c.height),p=d.data;
@@ -1346,13 +1433,17 @@ async function importBackup(file){
 }
 
 /* ================= Boot ================= */
+S.errors=[];
+function logErr(m){m=String(m||"").slice(0,200);if(!m||S.errors.includes(m))return;S.errors.push(m);if(S.errors.length>8)S.errors.shift();toast("Hata: "+m);}
+window.addEventListener("error",e=>logErr(e.message||e.error));
+window.addEventListener("unhandledrejection",e=>logErr(e.reason&&(e.reason.message||e.reason)));
 $("#restoreIn").addEventListener("change",ev=>{const f=ev.target.files?.[0];ev.target.value="";if(f)importBackup(f);});
+$("#ocrCam").addEventListener("change",ev=>{const f=ev.target.files?.[0];ev.target.value="";if(f)ocrFromFile(f);});
+db=makeDB();dl=shareFile;ai=null;
 render();
 (async()=>{
-  db=makeDB();dl=shareFile;ai=null;
-  await loadDB();
   const loaded=new Set();
-  const done=k=>{loaded.add(k);if(loaded.size>=6)S.ready=true;render();};
+  const done=k=>{loaded.add(k);if(loaded.size>=6&&S.loadedOnce)S.ready=true;render();};
   db.collection("products").onSnapshot(s=>{S.products=new Map(s.docs.map(d=>[d.id,{id:d.id,...d.data()}]));done("p");});
   db.collection("shelves").onSnapshot(s=>{S.shelves=new Map(s.docs.map(d=>[d.id,{...d.data(),code:d.data().code||d.id}]));done("s");});
   db.collection("staff").onSnapshot(s=>{S.staff=new Map(s.docs.map(d=>[d.id,{id:d.id,...d.data()}]));done("st");});
@@ -1360,16 +1451,21 @@ render();
   db.collection("moves").orderBy("ts","desc").limit(1000).onSnapshot(s=>{S.moves=s.docs.map(d=>({id:d.id,...d.data()}));done("m");});
   db.collection("vehicles").onSnapshot(s=>{S.vehicles=new Map(s.docs.map(d=>[d.id,{...d.data()}]));done("v");});
   db.doc("settings/main").onSnapshot(s=>{S.settings=s.exists?{...s.data()}:{};if(S.view==="ayar")render();});
+  S.loading=true;
+  try{await Promise.race([loadDB(),new Promise(r=>setTimeout(r,5000))]);}catch(e){logErr("Kayıtlar okunamadı: "+(e&&e.message||e));}
+  S.loading=false;S.loadedOnce=true;S.ready=true;render();
   document.addEventListener("visibilitychange",()=>{if(document.hidden){persist();closeScanner();}});
   if(APP){
-    APP.addListener("pause",()=>{persist();closeScanner();});
-    APP.addListener("backButton",()=>{
-      if(!$("#scanner").hidden){closeScanner();return;}
-      if(sheetOpen){closeSheet();return;}
-      if(S.view==="task"&&S.task){S.task=null;render();return;}
-      if(S.view!=="home"){S.view="home";render();return;}
-      APP.exitApp();
-    });
+    try{
+      APP.addListener("pause",()=>{persist();closeScanner();});
+      APP.addListener("backButton",()=>{
+        if(!$("#scanner").hidden){closeScanner();return;}
+        if(sheetOpen){closeSheet();return;}
+        if(S.view==="task"&&S.task){S.task=null;render();return;}
+        if(S.view!=="home"){S.view="home";render();return;}
+        APP.exitApp();
+      });
+    }catch(e){console.warn(e);}
   }
 })();
 })();

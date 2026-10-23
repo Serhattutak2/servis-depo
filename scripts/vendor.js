@@ -3,6 +3,8 @@
 const fs = require("fs"), path = require("path");
 const root = path.join(__dirname, ".."), nm = p => path.join(root, "node_modules", p), out = p => path.join(root, "www", "vendor", p);
 function cp(src, dst) { fs.mkdirSync(path.dirname(out(dst)), { recursive: true }); fs.copyFileSync(nm(src), out(dst)); }
+cp("@capacitor/core/dist/capacitor.js", "capacitor.js");
+fs.writeFileSync(out("build.js"), `window.APP_BUILD=${JSON.stringify(process.env.GITHUB_RUN_NUMBER ? "1.0." + process.env.GITHUB_RUN_NUMBER : "geliştirme")};\n`);
 cp("@zxing/library/umd/index.min.js", "zxing.min.js");
 cp("jsqr/dist/jsQR.js", "jsQR.js");
 cp("qrcode-generator/qrcode.js", "qrcode.js");
