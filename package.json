@@ -8,22 +8,25 @@
     "build": "node scripts/vendor.js && npx cap sync android"
   },
   "dependencies": {
-    "@capacitor-mlkit/barcode-scanning": "6.2.0",
-    "@capacitor/android": "6.2.0",
-    "@capacitor/app": "6.0.1",
-    "@capacitor/app-launcher": "6.0.3",
-    "@capacitor/core": "6.2.0",
-    "@capacitor/filesystem": "6.0.2",
-    "@capacitor/share": "6.0.2"
+    "@capacitor-community/bluetooth-le": "8.3.0",
+    "@capacitor-mlkit/barcode-scanning": "8.2.1",
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/app-launcher": "8.0.1",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3",
+    "@mmote/niimbluelib": "0.47.1"
   },
   "devDependencies": {
-    "@capacitor/cli": "6.2.0",
+    "@capacitor/cli": "8.5.3",
     "@fontsource/barlow": "5.1.0",
     "@fontsource/barlow-condensed": "5.1.0",
     "@fontsource/jetbrains-mono": "5.1.1",
     "@tesseract.js-data/eng": "1.0.0",
     "@tesseract.js-data/tur": "1.0.0",
     "@zxing/library": "0.20.0",
+    "esbuild": "0.24.2",
     "jsqr": "1.4.0",
     "qrcode-generator": "1.4.4",
     "tesseract.js": "5.1.1",

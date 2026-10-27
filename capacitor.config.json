@@ -2,6 +2,19 @@
   "appId": "com.serhattutak.servisdepo",
   "appName": "Servis Depo",
   "webDir": "www",
-  "android": { "allowMixedContent": false, "captureInput": true, "webContentsDebuggingEnabled": false },
-  "plugins": {}
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "BluetoothLe": {
+      "displayStrings": {
+        "scanning": "Yazıcı aranıyor…",
+        "cancel": "Vazgeç",
+        "availableDevices": "Etiket yazıcısını seç (B1-…)",
+        "noDeviceFound": "Yazıcı bulunamadı. Yazıcı açık mı?"
+      }
+    }
+  }
 }
