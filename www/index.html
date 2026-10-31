@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="vendor/fonts.css">
 <script src="vendor/native.js"></script>
 <script src="vendor/build.js"></script>
+<script src="firebase-config.js"></script>
 <script defer src="vendor/jsQR.js"></script>
 <script defer src="vendor/zxing.min.js"></script>
 <script defer src="vendor/qrcode.js"></script>
@@ -181,6 +182,12 @@ html.native-scan body::before{display:none}
 html.native-scan body>*:not(#scanner){visibility:hidden}
 html.native-scan #scanner{background:transparent}
 html.native-scan #scanVideo{display:none}
+.withmic{display:flex;gap:6px;align-items:stretch}
+.withmic>input,.withmic>textarea{flex:1;min-width:0}
+.micbtn{flex:none;width:48px;border:1.5px solid var(--line);background:var(--surface);color:var(--accent);border-radius:10px;display:grid;place-items:center;cursor:pointer}
+.micbtn svg{width:22px;height:22px}
+.micbtn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+input.filled,textarea.filled{border-color:var(--ok)}
 .ocrwords .chipbtn{font-family:var(--mono);font-size:13px}
 </style>
 </head>
@@ -233,6 +240,8 @@ const IC={
   count:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>`,
   cam:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="M8 12h8"/></svg>`,
   wa:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z"/></svg>`,
+  mic:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>`,
+  globe:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>`,
   print:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg>`,
   check:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg>`,
 };
@@ -266,14 +275,14 @@ function render(){
   $("#view").innerHTML=({home:vHome,task:vTask,orders:vOrders,ayar:vAyar})[S.view]();
   if(id){const el=document.getElementById(id);if(el&&el.closest("#view")){el.focus();try{if(ss!=null)el.setSelectionRange(ss,se);}catch{}}}
   const c=$("#conn");
-  if(S.offline){c.className="pill bad";c.textContent="Kayıt yok";}else if(S.ready){c.className="pill ok";c.textContent="Bu telefonda";}
+  if(S.offline){c.className="pill bad";c.textContent="Kayıt yok";}else syncPill();
 }
 function offlineNote(){return S.offline?`<div class="notice bad">Kayıtlar telefona yazılamıyor. Depolama alanını kontrol et.</div>`:(!S.ready?`<div class="notice info">Depo yükleniyor…</div>`:"");}
 
 /* ================= DEPO (home) ================= */
 function vHome(){
   const q=norm(S.q);
-  const search=`<input id="q" class="huge" type="search" placeholder="Ne arıyorsun? ör. ford balata" value="${esc(S.q)}" data-in="q" autocomplete="off" enterkeyhint="search" aria-label="Malzeme ara">`;
+  const search=`<div class="withmic"><input id="q" class="huge" type="search" placeholder="Ne arıyorsun? ör. ford balata" value="${esc(S.q)}" data-in="q" autocomplete="off" enterkeyhint="search" aria-label="Malzeme ara">${micBtn("q")}</div>`;
   if(q){
     const words=q.split(" ");
     const res=[...S.products.values()].filter(p=>{const h=norm([p.name,p.brand,p.partNo,p.vehicle,p.category,(p.codes||[]).join(" ")].join(" "));return words.every(w=>h.includes(w));})
@@ -328,7 +337,7 @@ function moveItem(m){
 function prog(n,of){return `<div class="prog" aria-label="Adım ${n}/${of}">${Array.from({length:of},(_,i)=>`<i class="${i<n?"on":""}"></i>`).join("")}</div>`;}
 function scanBtn(label){return `${scanState()}<button class="btn pri big" data-act="scan">${IC.cam}${esc(label)}</button>
   <div class="row" style="justify-content:center"><label class="btn sm" for="gal" role="button" tabindex="0">Galeriden fotoğraf seç</label></div>
-  <form class="row" data-form="manual"><input id="manual" class="grow" placeholder="veya kodu yaz / el okuyucu" autocomplete="off" enterkeyhint="go" aria-label="Kod"><button class="btn">Bul</button></form>`;}
+  <form class="row" data-form="manual"><input id="manual" class="grow" placeholder="veya kodu yaz / el okuyucu" autocomplete="off" enterkeyhint="go" aria-label="Kod">${micBtn("manual")}<button class="btn">Bul</button></form>`;}
 function scanState(){
   const f=S.scan;if(!f)return "";
   if(f.state==="busy")return `<div class="notice info scanbox"><img src="${f.url}" alt=""><div><b>Okunuyor…</b><div style="font-size:14px">Fotoğraftaki kod aranıyor.</div></div></div>`;
@@ -539,7 +548,7 @@ function drawWo(){
   <label class="f">Plaka <input id="woPlate" class="huge mono" value="${esc(o.plate)}" placeholder="34 ABC 123" style="text-transform:uppercase" data-in="woplate" autocomplete="off"></label>
   <div id="woHist">${historyHtml()}</div>
   <div class="card stack"><b>Araç</b>
-    <div class="stack" style="gap:6px"><label class="f">Marka model <input id="woModel" value="${esc(o.model)}" placeholder="Yaz: egea, focus, clio…" data-in="womodel" autocomplete="off" autocapitalize="words"></label>
+    <div class="stack" style="gap:6px"><label class="f">Marka model <div class="withmic"><input id="woModel" value="${esc(o.model)}" placeholder="Yaz: egea, focus, clio…" data-in="womodel" autocomplete="off" autocapitalize="words">${micBtn("woModel")}</div></label>
     <div id="modelSug" class="suggest"></div></div>
     <div class="grid2"><label class="f">Model yılı <input id="woYear" inputmode="numeric" maxlength="4" value="${esc(o.year)}" placeholder="2018"></label>
     <label class="f">Kilometre <input id="woKm" inputmode="numeric" value="${kmFmt(o.km)}" placeholder="38.110" data-in="km" autocomplete="off"></label></div>
@@ -547,19 +556,19 @@ function drawWo(){
   </div>
   <div id="woExp">${expHtml()}</div>
   <div class="card stack"><b>Araç sahibi</b><div class="grid2">
-    <label class="f">Ad soyad <input id="woOwner" value="${esc(o.owner)}" placeholder="Ahmet Yılmaz" autocomplete="off"></label>
+    <label class="f">Ad soyad <div class="withmic"><input id="woOwner" value="${esc(o.owner)}" placeholder="Ahmet Yılmaz" autocomplete="off">${micBtn("woOwner")}</div></label>
     <label class="f">Telefon (WhatsApp) <input id="woTel" inputmode="tel" value="${esc(o.phone)}" placeholder="05xx xxx xx xx"></label></div></div>
-  <label class="f">Şikayet <textarea id="woComp" placeholder="Frenden ses geliyor, periyodik bakım…">${esc(o.complaint)}</textarea></label>
+  <label class="f">Şikayet <div class="withmic"><textarea id="woComp" placeholder="Frenden ses geliyor, periyodik bakım…">${esc(o.complaint)}</textarea>${micBtn("woComp")}</div></label>
   <div class="card stack"><div class="sectionhd"><b>Yapılacaklar</b><span class="muted" style="font-size:13px">Fiyatlar KDV hariç</span></div>
     <div id="woSug">${sugHtml()}</div>
     <div id="woTasks">${tasksHtml()}</div>
-    <form class="row" data-form="wotask"><input id="woTaskIn" class="grow" placeholder="Başka iş yaz"><button class="btn">Ekle</button></form></div>
+    <form class="row" data-form="wotask"><div class="withmic"><input id="woTaskIn" class="grow" placeholder="Başka iş yaz">${micBtn("woTaskIn")}</div><button class="btn">Ekle</button></form></div>
   <div class="card stack"><div class="sectionhd"><b>Parçalar</b><span class="muted" style="font-size:13px">Birim fiyat, KDV hariç</span></div>
     <div id="woParts">${partsHtml()}</div>
     ${o.id?`<button class="btn sm" type="button" data-act="wo-out">Depodan parça al (raftan düşer)</button>`:`<div class="muted" style="font-size:13px">Kaydettikten sonra depodan parça alabilirsin.</div>`}
     <form class="row" data-form="wopart"><input id="mpName" class="grow" placeholder="Dışarıdan alınan parça" style="flex-basis:160px"><input id="mpQty" inputmode="numeric" value="1" style="width:60px" aria-label="Adet"><input id="mpPrice" class="price" inputmode="decimal" placeholder="₺" aria-label="Birim fiyat"><button class="btn">Ekle</button></form></div>
   <div class="card" id="woTot">${totHtml()}</div>
-  <label class="f">Usta notu · tecrübe <textarea id="woNotes" placeholder="Ne bulundu? Bu modelde dikkat edilecek şey… Aynı model gelince gösterilir.">${esc(o.notes)}</textarea></label>
+  <label class="f">Usta notu · tecrübe <div class="withmic"><textarea id="woNotes" placeholder="Ne bulundu? Bu modelde dikkat edilecek şey… Aynı model gelince gösterilir.">${esc(o.notes)}</textarea>${micBtn("woNotes")}</div></label>
   <div class="stack" style="gap:6px"><b>Kim yapacak?</b><div class="chips" id="woStaff">${staffHtml()}</div></div>
   <div class="row"><label class="chk grow" style="border:0;padding:0"><input type="checkbox" id="woApproved" ${o.approved?"checked":""}><span>Müşteri fiyatı onayladı</span></label>
     <select id="woStatus" style="width:auto" aria-label="Durum">${Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${o.status===k?"selected":""}>${v}</option>`).join("")}</select></div>
@@ -690,7 +699,7 @@ function vAyar(){
     ${st.length?`<div class="list">${st.map(s=>`<div class="item" style="cursor:default"><div class="grow"><div class="t">${esc(s.name)}</div><div class="s">${esc(s.role||"")} ${s.phone?"· "+esc(s.phone):""}</div></div><button class="btn sm danger" data-act="staff-del" data-id="${esc(s.id)}">Sil</button></div>`).join("")}</div>`:`<div class="card empty">Personel listesi boş.</div>`}`;
   } else if(S.sub==="isletme"){
     const st=S.settings,lab=Object.entries(st.labor||{}).sort((a,b)=>a[0].localeCompare(b[0],"tr"));
-    b=`<form class="card stack" data-form="shop"><p class="muted" style="margin:0;font-size:14px">Müşteriye giden mesajların altına eklenir.</p>
+    b=`${syncCardHtml()}<form class="card stack" data-form="shop"><p class="muted" style="margin:0;font-size:14px">Müşteriye giden mesajların altına eklenir.</p>
       <label class="f">İşletme adı <input id="shName" value="${esc(st.shopName||"")}" placeholder="Tutak Oto Servis"></label>
       <label class="f">İşletme telefonu <input id="shPhone" inputmode="tel" value="${esc(st.shopPhone||"")}"></label>
       <label class="f">Mesaj altı (adres, IBAN…) <textarea id="shFooter">${esc(st.shopFooter||"")}</textarea></label>
@@ -699,7 +708,7 @@ function vAyar(){
       <button class="btn pri">Kaydet</button></form>
     <div class="card stack"><h3>Etiket yazıcısı</h3>
       <div class="prstatus">${prStatusHtml()}</div>
-      ${canDirectPrint()?`<div class="grid2"><button class="btn" data-act="pr-pick">${st.printerName?"Yazıcıyı değiştir":"Yazıcıyı seç"}</button><button class="btn" data-act="pr-test">Deneme etiketi bas</button></div>
+      ${canDirectPrint()?`<div class="grid2"><button class="btn" data-act="pr-pick">${LOCAL.printerName?"Yazıcıyı değiştir":"Yazıcıyı seç"}</button><button class="btn" data-act="pr-test">Deneme etiketi bas</button></div>
       <label class="f">Baskı koyuluğu <select id="prDensity">${[1,2,3,4,5].map(n=>`<option value="${n}" ${(+st.printDensity||3)===n?"selected":""}>${n}${n===3?" (normal)":n===5?" (en koyu)":n===1?" (en açık)":""}</option>`).join("")}</select></label>
       <div class="muted" style="font-size:13px">Niimbot B1 için. Yazıcıyı aç, ilk seferde listeden “B1-…” ile başlayanı seç. Sonra uygulama onu hatırlar.</div>`:""}
       <div class="prstate notice info" hidden></div></div>
@@ -740,13 +749,14 @@ function prodSheet(id){
 }
 function prodForm(p,opts={}){
   p=p||{};const isNew=!p.id;
+  if(isNew&&opts.code)setTimeout(()=>webLookupForForm(true),60);
   const codes=[...(p.codes||[]),...(opts.code&&!(p.codes||[]).includes(opts.code)?[opts.code]:[])];
   openSheet(`${sheetHd(isNew?"Yeni ürün":"Ürünü düzenle")}
   ${isNew&&opts.code?`<div class="notice info">Bu kod kayıtlı değil: <b class="mono">${esc(opts.code)}</b></div>`:""}
-  <label class="btn pri big" for="ocrCam" role="button" tabindex="0">${IC.cam}Kutunun yazılarını oku</label>
-  <div id="ocrOut"></div>
+  <div class="grid2"><label class="btn pri" for="ocrCam" role="button" tabindex="0">${IC.cam}Kutunun yazılarını oku</label><button class="btn" type="button" data-act="web-lookup">${IC.globe}İnternette tanı</button></div>
+  <div id="ocrOut"></div><div id="webOut"></div>
   <form class="stack" data-form="prod" data-id="${esc(p.id||"")}">
-    <label class="f">Ürün adı * <input id="pName" required value="${esc(p.name)}" placeholder="Ön fren balatası"></label>
+    <label class="f">Ürün adı * <div class="withmic"><input id="pName" required value="${esc(p.name)}" placeholder="Ön fren balatası">${micBtn("pName")}</div></label>
     <div class="grid2"><label class="f">Marka <input id="pBrand" value="${esc(p.brand)}" placeholder="Ford, Bosch…"></label><label class="f">Parça no <input id="pPart" class="mono" value="${esc(p.partNo)}"></label>
     <label class="f">Satış fiyatı (KDV hariç) <input id="pPrice" inputmode="decimal" value="${priceVal(p.price)}" placeholder="₺"></label></div>
     <details class="more" ${isNew?"":"open"}><summary>Daha fazla bilgi (isteğe bağlı)</summary><div class="stack">
@@ -755,7 +765,7 @@ function prodForm(p,opts={}){
       <label class="f">Birim <select id="pUnit">${UNITS.map(u=>`<option ${unitOf(p)===u?"selected":""}>${u}</option>`).join("")}</select></label>
       <label class="f">Şu sayının altına düşünce uyar <input id="pMin" inputmode="numeric" value="${esc(p.min||"")}" placeholder="ör. 2"></label></div>
       <label class="f">Barkodlar (virgülle) <input id="pCodes" class="mono" value="${esc(codes.join(", "))}"></label>
-      <label class="f">Not <textarea id="pNotes">${esc(p.notes)}</textarea></label></div></details>
+      <label class="f">Not <div class="withmic"><textarea id="pNotes">${esc(p.notes)}</textarea>${micBtn("pNotes")}</div></label></div></details>
     <button class="btn ${isNew?"okb":"pri"} big">${isNew?"Tamam · kaydet":"Kaydet"}</button>
   </form>
   ${ai&&!isNew?`<button class="btn sm" type="button" data-act="ai-text">Parça no'dan bilgileri tamamla</button><div id="aiOut" class="muted" style="font-size:14px"></div>`:""}`);
@@ -838,7 +848,7 @@ async function saveSettings(patch){S.settings={...S.settings,...patch};try{await
 function prStatusHtml(){
   if(!canDirectPrint())return `<div class="muted" style="font-size:13px">Doğrudan yazdırma sadece telefondaki uygulamada çalışır.</div>`;
   const on=PR.client&&PR.client.isConnected();
-  return `<div class="row" style="font-size:14px"><span class="pill ${on?"ok":"neu"}">${on?"Bağlı":"Bağlı değil"}</span><span class="grow">${S.settings.printerName?`Yazıcı: <b>${esc(S.settings.printerName)}</b>`:"Yazıcı henüz seçilmedi. İlk yazdırmada listeden seçeceksin."}</span></div>`;
+  return `<div class="row" style="font-size:14px"><span class="pill ${on?"ok":"neu"}">${on?"Bağlı":"Bağlı değil"}</span><span class="grow">${LOCAL.printerName?`Yazıcı: <b>${esc(LOCAL.printerName)}</b>`:"Yazıcı henüz seçilmedi. İlk yazdırmada listeden seçeceksin."}</span></div>`;
 }
 function setPrState(t){PR.state=t;document.querySelectorAll(".prstate").forEach(e=>{e.textContent=t;e.hidden=!t;});}
 function prErr(e){
@@ -858,8 +868,8 @@ async function prConnect(pickNew){
     const N=window.niimbluelib,B=window.BleClient;
     await B.initialize({androidNeverForLocation:true});
     if(!(await B.isEnabled())){try{await B.requestEnable();}catch{}if(!(await B.isEnabled()))throw new Error("Bluetooth not enabled");}
-    let id=pickNew?null:S.settings.printerId;
-    if(!id){setPrState("Yazıcı seçiliyor…");const d=await B.requestDevice({});id=d.deviceId;await saveSettings({printerId:id,printerName:d.name||id});}
+    let id=pickNew?null:LOCAL.printerId;
+    if(!id){setPrState("Yazıcı seçiliyor…");const d=await B.requestDevice({});id=d.deviceId;saveLocal({printerId:id,printerName:d.name||id});}
     if(PR.client){try{await PR.client.disconnect();}catch{}}
     const c=new N.NiimbotCapacitorBleClient();
     c.on("disconnect",()=>{if(PR.client===c)refreshPrUI();});
@@ -1040,6 +1050,7 @@ function resolve(raw){
   return {kind:"unknown",code:raw};
 }
 function handleCode(raw){
+  if(/^MD:S:/.test(String(raw)))return syncJoinAsk(raw);
   const r=resolve(raw);if(!r)return;
   if(r.kind==="prod"&&!S.products.has(r.id)){toast("Bu etiketin ürünü silinmiş");return;}
   buzz();
@@ -1071,9 +1082,9 @@ async function putAway(shelf){
   try{
     if(!S.shelves.has(shelf))await db.doc("shelves/"+shelf).set({code:shelf,createdAt:Date.now()});
     const before=+(p.locs||{})[shelf]||0;
-    await setStock(p.id,shelf,before+t.qty);
+    db.inc("products",p.id,"locs",shelf,t.qty);
     const ref=await addMove({pid:p.id,name:p.name,type:"in",qty:t.qty,shelf});
-    S.last={pid:p.id,shelf,before,moveId:ref.id};
+    S.last={pid:p.id,shelf,before,delta:t.qty,moveId:ref.id};
     t.done={msg:`${t.qty} ${unitOf(p)} ${p.name}`,sub:`${shelf} rafına kondu`};render();
   }catch(e){fail(e,"Giriş");}
 }
@@ -1082,10 +1093,10 @@ async function commitOut(){
   const o=t.order&&S.orders.get(t.order);
   try{
     const before=+(p.locs||{})[t.shelf]||0;
-    await setStock(p.id,t.shelf,before-t.qty);
+    db.inc("products",p.id,"locs",t.shelf,-t.qty);
     const ref=await addMove({pid:p.id,name:p.name,type:"out",qty:t.qty,shelf:t.shelf,orderId:o?.id||"",plate:o?.plate||""});
     if(o)await db.doc("orders/"+o.id).update({parts:[...(o.parts||[]),{pid:p.id,name:p.name,qty:t.qty,shelf:t.shelf,price:+p.price||0}]});
-    S.last={pid:p.id,shelf:t.shelf,before,moveId:ref.id,orderId:o?.id};
+    S.last={pid:p.id,shelf:t.shelf,before,delta:-t.qty,moveId:ref.id,orderId:o?.id};
     const left=before-t.qty,m=+p.min||0;
     t.done={msg:`${t.qty} ${unitOf(p)} ${p.name} alındı`,sub:`${o?o.plate+" için · ":""}${t.shelf} rafında ${left} kaldı${m&&left<=m?" · sipariş zamanı":""}`};render();
   }catch(e){fail(e,"Çıkış");}
@@ -1093,7 +1104,7 @@ async function commitOut(){
 async function undo(){
   const l=S.last;if(!l||!db)return;
   try{
-    await setStock(l.pid,l.shelf,l.before);await db.doc("moves/"+l.moveId).delete();
+    if(l.delta)db.inc("products",l.pid,"locs",l.shelf,-l.delta);else await setStock(l.pid,l.shelf,l.before);await db.doc("moves/"+l.moveId).delete();
     if(l.orderId){const o=S.orders.get(l.orderId);if(o){const parts=[...(o.parts||[])];parts.pop();await db.doc("orders/"+o.id).update({parts});}}
     S.last=null;const t=S.task;t.done=null;render();toast("Geri alındı");
   }catch(e){fail(e,"Geri alma");}
@@ -1133,7 +1144,7 @@ document.addEventListener("click",async ev=>{
     case "ocr-word":{const f=document.getElementById(ocrTarget),w=ocrItems[+el.dataset.i];if(f&&w){f.value=(f.value.trim()+" "+w).trim();el.setAttribute("aria-pressed","true");}if(ocrTarget==="pNotes"||ocrTarget==="pPart"){const d=f&&f.closest("details");if(d)d.open=true;}break;}
     case "ocr-clear":{const f=document.getElementById(ocrTarget);if(f)f.value="";document.querySelectorAll('[data-act="ocr-word"]').forEach(b=>b.setAttribute("aria-pressed","false"));break;}
     case "backup":exportBackup();break;
-    case "restore-ok":db._load(S.pendingRestore);S.pendingRestore=null;await persist();closeSheet();S.view="home";render();toast("Yedek yüklendi");break;
+    case "restore-ok":await db._load(S.pendingRestore);S.pendingRestore=null;await persist();closeSheet();S.view="home";render();toast("Yedek yüklendi");break;
     case "ai-read":aiRead();break;
     case "qty":S.task.qty=Math.max(1,(+S.task.qty||1)+(+el.dataset.d));render();break;
     case "put":el.disabled=true;await putAway(el.dataset.c);break;
@@ -1158,6 +1169,16 @@ document.addEventListener("click",async ev=>{
       if(ok&&!S.settings.printSeen&&db){S.settings={...S.settings,printSeen:true};db.doc("settings/main").set(S.settings).catch(()=>{});}
       break;}
     case "unlabeled":unlabeledSheet();break;
+    case "mic":startVoice(el.dataset.t,el);break;
+    case "web-lookup":webLookupForForm(false);break;
+    case "web-name":{const n=$("#pName");if(n){n.value=el.dataset.n;n.classList.add("filled");}if($("#pCat"))$("#pCat").value=el.dataset.c;break;}
+    case "web-title":{const n=$("#pName");if(n){n.value=el.dataset.n;n.classList.add("filled");n.scrollIntoView({block:"center"});}break;}
+    case "sync-start":el.disabled=true;await syncStart();el.disabled=false;break;
+    case "sync-join":S.scanCb=v=>syncJoinAsk(v);openScanner();break;
+    case "sync-join-ok":await syncJoin();break;
+    case "sync-qr":syncQrSheet();break;
+    case "sync-leave":syncLeave();break;
+    case "sync-leave-ok":await persist();await writeSyncCfg(null);location.reload();break;
     case "cp":{const i=document.getElementById(el.dataset.t);if(i)i.value=Math.max(1,Math.min(99,(parseInt(i.value)||1)+(+el.dataset.d)));break;}
     case "print":{el.disabled=true;const n=parseInt($("#lblCopies")?.value)||1;const ok=await printJobs([{kind:el.dataset.k,key:el.dataset.key,copies:n}]);el.disabled=false;break;}
     case "print-unlabeled":{el.disabled=true;const ps=[...S.products.values()].filter(p=>!p.labeled).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));await printJobs(ps.map(p=>({kind:"p",key:p.id,copies:Math.max(1,qtyOf(p))})));el.disabled=false;unlabeledSheet();break;}
@@ -1222,6 +1243,7 @@ document.addEventListener("submit",async ev=>{
   else if(k==="prod")await saveProd(f);
   else if(k==="wotask"){const v=$("#woTaskIn").value.trim();if(!v)return;readWo();addTask(v);woRefresh();$("#woTaskIn").value="";}
   else if(k==="wopart"){const n=$("#mpName").value.trim();if(!n)return;readWo();wo.parts.push({name:n,qty:Math.max(1,parseInt($("#mpQty").value)||1),price:parseMoney($("#mpPrice").value),manual:true});woRefresh();["#mpName","#mpPrice"].forEach(x=>$(x).value="");$("#mpQty").value="1";}
+  else if(k==="syncjoin"){const v=$("#syncCode").value.trim();if(v)syncJoinAsk(v);}
   else if(k==="shop"){if(!db)return;const ns={...S.settings,shopName:$("#shName").value.trim(),shopPhone:$("#shPhone").value.trim(),shopFooter:$("#shFooter").value.trim(),supplierPhone:$("#shSup").value.trim(),printDensity:+($("#prDensity")?.value||S.settings.printDensity||3),labelSize:$("#shLabel").value};try{await db.doc("settings/main").set(ns);S.settings=ns;toast("Kaydedildi");}catch(e){fail(e,"Ayarlar");}}
   else if(k==="staff"){const name=$("#stName").value.trim();if(!name||!db)return;try{await db.collection("staff").add({name,role:$("#stRole").value.trim(),phone:$("#stPhone").value.trim(),createdAt:Date.now()});toast("Eklendi");}catch(e){fail(e,"Personel");}}
   else if(k==="shelfgen")await genShelves();
@@ -1327,6 +1349,7 @@ function makeDB(){
     async get(){return snapCol(col,o);},
     onSnapshot(fn){const s={kind:"col",col,o,fn};subs.add(s);setTimeout(()=>fn(snapCol(col,o)),0);return ()=>subs.delete(s);}});
   return {doc:p=>{const [c,i]=split(p);return docRef(c,i);},collection:p=>colRef(p),_data:data,
+    inc(c,i,field,key,delta){const cur=data[c]&&data[c][i];if(!cur)return;const v=clone(cur);v[field]=v[field]||{};v[field][key]=(+v[field][key]||0)+delta;data[c][i]=v;notify(c);},
     _load(obj){Object.keys(data).forEach(k=>delete data[k]);Object.assign(data,clone(obj||{}));const cols=new Set([...Object.keys(data),...[...subs].map(s=>s.col)]);cols.forEach(notify);}};
 }
 let persistT=0;
@@ -1336,7 +1359,7 @@ async function readText(path,dir){if(FS){const r=await FS.readFile({path,directo
 async function persist(){
   clearTimeout(persistT);
   if(!S.loadedOnce)return;
-  const json=JSON.stringify({app:"servis-depo",v:1,savedAt:Date.now(),data:db._data});
+  const json=JSON.stringify({app:"servis-depo",v:1,savedAt:Date.now(),data:snapshotData()});
   try{
     await writeText(DB_FILE,json);
     const day=new Date().getDay();
@@ -1400,6 +1423,7 @@ function camDenied(){
 function onScanned(val){
   if(SC.done)return;SC.done=true;
   beep(true);buzz();closeScanner();
+  if(S.scanCb){const cb=S.scanCb;S.scanCb=null;cb(val);return;}
   toast("Okundu: "+String(val).replace(/^MD:[PR]:/,"").slice(0,30));
   handleCode(val);render();
 }
@@ -1466,57 +1490,371 @@ async function toggleTorch(){
 
 /* ---------- Kutudan yazı okuma (internetsiz) ---------- */
 const BRANDS=["BOSCH","TRW","FEBI","FEBI BILSTEIN","MANN","MANN-FILTER","MAHLE","KNECHT","VALEO","SACHS","LEMFÖRDER","LEMFORDER","SKF","GATES","CONTINENTAL","CONTITECH","NGK","DENSO","BREMBO","FERODO","TEXTAR","ATE","FILTRON","HENGST","PURFLUX","CASTROL","SHELL","MOTUL","MOBIL","OPET","PETROL OFISI","LIQUI MOLY","ELRING","REINZ","VICTOR REINZ","CORTECO","INA","LUK","DAYCO","MAGNETI MARELLI","HELLA","OSRAM","PHILIPS","VARTA","MUTLU","İNCİ","INCI","YIGIT","YİĞİT","FORD","MOTORCRAFT","RENAULT","FIAT","TOYOTA","VOLKSWAGEN","VW","OPEL","HYUNDAI","MOBIS","KIA","DELPHI","KYB","KAYABA","MONROE","MEYLE","SWAG","TOPRAN","VAICO","VEMO","NISSENS","BEHR","MAPCO","BLUE PRINT","JAPANPARTS","ASHIKA","OPTIMAL","DOLZ","METELLI","AJUSA","PIERBURG","BERU","CHAMPION","EXIDE","TOTAL","ELF","FRENOTEKS","EKU","HİFLEX","SADECE","OE","MOPAR","PEUGEOT","CITROEN","HONDA","NISSAN","MERCEDES","BMW","AUDI","SKODA","SEAT","DACIA"];
-let ocrWorker=null,ocrTarget="pName",ocrItems=[];
+let ocrTarget="pName",ocrItems=[];
 function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector(`script[src="${src}"]`))return res();const t=document.createElement("script");t.src=src;t.onload=res;t.onerror=()=>rej(new Error(src));document.head.appendChild(t);});}
-async function getOcr(){
-  if(ocrWorker)return ocrWorker;
-  await loadScript("vendor/tesseract/tesseract.min.js");
-  ocrWorker=await Tesseract.createWorker("tur",1,{workerPath:"vendor/tesseract/worker.min.js",corePath:"vendor/tesseract",langPath:"vendor/tesseract/lang",gzip:false,workerBlobURL:false,cacheMethod:"none"});
-  return ocrWorker;
-}
-async function ocrFromFile(file){
-  const out=$("#ocrOut");if(out)out.innerHTML=`<div class="notice info">Fotoğraf hazırlanıyor…</div>`;
-  const img=await loadImg(file);if(!img){if(out)out.innerHTML=`<div class="notice warn">Fotoğraf açılamadı.</div>`;return;}
-  runOcr(toCanvas(img,1800,1,0));
-}
-function preprocess(c){
-  const x=c.getContext("2d",{willReadFrequently:true}),d=x.getImageData(0,0,c.width,c.height),p=d.data;
-  for(let i=0;i<p.length;i+=4){const g=(306*p[i]+601*p[i+1]+117*p[i+2])>>10,v=g<128?Math.max(0,g*1.15-25):Math.min(255,g*1.15);p[i]=p[i+1]=p[i+2]=v;}
-  x.putImageData(d,0,0);return c;
-}
-async function runOcr(c){
-  const out=$("#ocrOut");if(!out)return;
-  out.innerHTML=`<div class="notice info">Yazılar okunuyor… İlk seferde 10–20 saniye sürebilir.</div>`;
+/* ---------- Sesle yazma ---------- */
+const SR=plug("SpeechRecognition"),TR=plug("TextRecognition");
+function micBtn(target){return SR?`<button type="button" class="micbtn" data-act="mic" data-t="${target}" aria-label="Sesle yaz">${IC.mic}</button>`:"";}
+let micBusy=false;
+async function startVoice(target,btn){
+  const el=document.getElementById(target);if(!el||!SR||micBusy)return;
+  micBusy=true;btn&&btn.classList.add("on");
   try{
-    const w=await getOcr();
-    const {data}=await w.recognize(preprocess(c));
-    const lines=(data.text||"").split("\n").map(l=>l.replace(/[|_~^`"“”]+/g," ").replace(/\s+/g," ").trim()).filter(l=>l.length>=2&&/[A-Za-zÇĞİÖŞÜçğıöşü0-9]{2}/.test(l));
-    const words=[];lines.forEach(l=>l.split(" ").forEach(t=>{t=t.replace(/^[^\wÇĞİÖŞÜçğıöşü]+|[^\wÇĞİÖŞÜçğıöşü.\-/]+$/g,"");if(t.length>=2&&!words.includes(t))words.push(t);}));
-    ocrItems=[...new Set([...lines.filter(l=>l.includes(" ")),...words])].slice(0,60);
-    const up=data.text.toLocaleUpperCase("tr");
-    const brand=BRANDS.find(b=>new RegExp("(^|[^A-ZÇĞİÖŞÜ])"+b.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"([^A-ZÇĞİÖŞÜ]|$)").test(up));
-    if(brand&&$("#pBrand")&&!$("#pBrand").value.trim())$("#pBrand").value=brand.charAt(0)+brand.slice(1).toLocaleLowerCase("tr");
-    const part=words.find(t=>/\d/.test(t)&&/[A-Za-z]/.test(t)&&t.length>=5&&t.length<=20)||words.find(t=>/^\d[\d.\- ]{5,18}\d$/.test(t));
-    if(part&&$("#pPart")&&!$("#pPart").value.trim())$("#pPart").value=part;
-    drawOcr(brand,part);
-  }catch(e){console.warn(e);out.innerHTML=`<div class="notice warn">Yazılar okunamadı. Daha yakından, ışıkta tekrar çek.</div>`;}
+    const perm=await SR.requestPermissions();
+    if(perm&&perm.speechRecognition&&perm.speechRecognition!=="granted"){toast("Mikrofon izni yok. Ayarlar › Uygulamalar › Servis Depo › İzinler › Mikrofon");return;}
+    const r=await SR.start({language:"tr-TR",maxResults:1,popup:true,prompt:"Konuş…",partialResults:false});
+    let t=(r&&r.matches&&r.matches[0]||"").trim();if(!t)return;
+    if(el.id==="woKm"||el.inputMode==="numeric"||el.inputMode==="decimal"){t=t.replace(/[^\d,]/g,"");}
+    else if(el.tagName!=="TEXTAREA"&&el.value.trim()==="")t=t.charAt(0).toLocaleUpperCase("tr")+t.slice(1);
+    el.value=el.tagName==="TEXTAREA"&&el.value.trim()?el.value.trim()+" "+t:(el.value.trim()&&el.id!=="q"&&el.id!=="manual"?el.value.trim()+" "+t:t);
+    el.dispatchEvent(new Event("input",{bubbles:true}));
+    if(el.id==="manual"){el.closest("form")?.requestSubmit();}
+    el.focus();
+  }catch(e){
+    const m=String(e&&(e.message||e)||"");
+    if(!/cancel|no match|didn't understand|7/i.test(m))toast("Ses anlaşılamadı. Tekrar dene"+(navigator.onLine?"":" (internet yokken telefonun Türkçe çevrimdışı ses paketi gerekir)"));
+  }finally{micBusy=false;btn&&btn.classList.remove("on");}
 }
-function drawOcr(brand,part){
+
+/* ---------- Kutudan yazı okuma (telefonun kendi yazı tanıması, internetsiz) ---------- */
+async function ocrFromFile(file){
+  const out=$("#ocrOut");if(out)out.innerHTML=`<div class="notice info">Yazılar okunuyor…</div>`;
+  try{
+    let text="",lines=[];
+    if(TR&&FS){
+      const r=await FS.writeFile({path:"ocr.jpg",data:await blobToB64(file),directory:"CACHE"});
+      const res=await TR.processImage({path:r.uri});
+      text=res.text||"";
+      (res.blocks||[]).forEach(b=>(b.lines||[]).forEach(l=>l.text&&lines.push(l.text)));
+      if(!lines.length)lines=text.split("\n");
+    }else if(window.__ocrStub){text=await window.__ocrStub(file);lines=text.split("\n");}
+    else{if(out)out.innerHTML=`<div class="notice warn">Yazı okuma bu cihazda yok.</div>`;return;}
+    handleOcrText(text,lines);
+  }catch(e){console.warn(e);if(out)out.innerHTML=`<div class="notice warn">Yazılar okunamadı. Daha yakından, ışıkta tekrar çek.</div>`;}
+}
+const PART_BRANDS=BRANDS.filter(b=>!["FORD","RENAULT","FIAT","TOYOTA","VOLKSWAGEN","VW","OPEL","HYUNDAI","KIA","PEUGEOT","CITROEN","HONDA","NISSAN","MERCEDES","BMW","AUDI","SKODA","SEAT","DACIA","OE","SADECE"].includes(b));
+const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+function findBrand(up,list){let best=null,bi=1e9;for(const b of list){const m=new RegExp("(^|[^A-ZÇĞİÖŞÜ])"+reEsc(b)+"([^A-ZÇĞİÖŞÜ]|$)").exec(up);if(m&&m.index<bi){bi=m.index;best=b;}}return best;}
+const niceBrand=b=>b.length<=4?b:b.split(" ").map(w=>w.charAt(0)+w.slice(1).toLocaleLowerCase("tr")).join(" ");
+function handleOcrText(text,rawLines){
+  const lines=rawLines.map(l=>l.replace(/[|_~^`"“”]+/g," ").replace(/\s+/g," ").trim()).filter(l=>l.length>=2&&/[A-Za-zÇĞİÖŞÜçğıöşü0-9]{2}/.test(l));
+  const words=[];lines.forEach(l=>l.split(" ").forEach(t=>{t=t.replace(/^[^\wÇĞİÖŞÜçğıöşü]+|[^\wÇĞİÖŞÜçğıöşü.\-/]+$/g,"");if(t.length>=2&&!words.includes(t))words.push(t);}));
+  ocrItems=[...new Set([...lines.filter(l=>l.includes(" ")),...words])].slice(0,60);
+  const up=text.toLocaleUpperCase("tr");
+  const brand=findBrand(up,PART_BRANDS)||findBrand(up,BRANDS);
+  if(brand&&$("#pBrand")&&!$("#pBrand").value.trim())$("#pBrand").value=niceBrand(brand);
+  const bar=(up.match(/\b\d{13}\b|\b\d{12}\b|\b\d{8}\b/)||[])[0];
+  if(bar){const c=$("#pCodes");if(c&&!c.value.includes(bar))c.value=[c.value,bar].filter(Boolean).join(", ");}
+  const part=words.find(t=>/\d/.test(t)&&/[A-Za-z]/.test(t)&&t.length>=5&&t.length<=20&&!/^(EAN|REF|ART|NO)\b/i.test(t))
+          ||lines.map(l=>(l.match(/\b\d[\d .\-]{5,16}\d\b/)||[])[0]).find(x=>x&&x.replace(/\D/g,"")!==bar);
+  if(part&&$("#pPart")&&!$("#pPart").value.trim())$("#pPart").value=part.trim();
+  const type=detectType(text);
+  if(type&&$("#pName")&&!$("#pName").value.trim())$("#pName").value=type.name;
+  if(type&&$("#pCat"))$("#pCat").value=type.cat;
+  drawOcr(brand,part,type);
+  if((part||bar)&&navigator.onLine)webLookupForForm(true);
+}
+function drawOcr(brand,part,type){
   const out=$("#ocrOut");if(!out)return;
   if(!ocrItems.length){out.innerHTML=`<div class="notice warn">Yazı bulunamadı. Yazılı yüzü çerçeveye al, yaklaş ve tekrar dene.</div>`;return;}
   const T=[["pName","Ad"],["pBrand","Marka"],["pPart","Parça no"],["pNotes","Not"]];
   out.innerHTML=`<div class="card stack" style="gap:8px">
-    ${brand||part?`<div class="notice ok" style="font-size:14px">${brand?`Marka: <b>${esc($("#pBrand").value)}</b> `:""}${part?`Parça no: <b>${esc(part)}</b>`:""} — kontrol et.</div>`:""}
-    <div style="font-size:14px">Önce hangi alana yazılacağını seç, sonra kelimelere dokun:</div>
+    ${brand||part||type?`<div class="notice ok" style="font-size:14px">Kutudan okunan: ${type?`<b>${esc(type.name)}</b> `:""}${brand?`· Marka <b>${esc(niceBrand(brand))}</b> `:""}${part?`· Parça no <b>${esc(part)}</b>`:""}. Kontrol et.</div>`:""}
+    <div style="font-size:14px">Eksik kalanı doldurmak için önce alanı seç, sonra kelimelere dokun:</div>
     <div class="chips">${T.map(([id,l])=>`<button class="chipbtn" type="button" data-act="ocr-target" data-t="${id}" aria-pressed="${ocrTarget===id}">${l}</button>`).join("")}</div>
     <div class="chips ocrwords">${ocrItems.map((w,i)=>`<button class="chipbtn" type="button" data-act="ocr-word" data-i="${i}">${esc(w)}</button>`).join("")}</div>
     <button class="btn sm" type="button" data-act="ocr-clear">Seçili alanı temizle</button></div>`;
 }
 
+/* ---------- İnternette arayıp parçayı tanıma ---------- */
+const PART_TYPES=[
+  [/ön fren balata|front brake pad|brake pads? front|bremsbel[aä]ge? (satz,? )?vorder|plaquettes? avant/i,"Ön Fren Balatası","Fren"],
+  [/arka fren balata|rear brake pad|brake pads? rear|bremsbel[aä]ge? (satz,? )?hinter|plaquettes? arri[eè]re/i,"Arka Fren Balatası","Fren"],
+  [/fren balata|disk balata|brake pad|bremsbel[aä]g|plaquette/i,"Fren Balatası","Fren"],
+  [/ön fren dis[kc]|front brake dis[ck]|bremsscheibe vorder/i,"Ön Fren Diski","Fren"],
+  [/arka fren dis[kc]|rear brake dis[ck]|bremsscheibe hinter/i,"Arka Fren Diski","Fren"],
+  [/fren dis[kc]|brake dis[ck]|bremsscheibe|disque de frein/i,"Fren Diski","Fren"],
+  [/kampana balata|fren pabucu|brake shoe|bremsbacke/i,"Fren Pabucu","Fren"],
+  [/fren kaliper|fren merkez|brake caliper|bremssattel/i,"Fren Kaliperi","Fren"],
+  [/fren hidroli|brake fluid|bremsfl[uü]ssigkeit|\bdot ?4\b/i,"Fren Hidroliği","Yağ & Sıvı"],
+  [/yağ filtre|yag filtre|oil filter|[oö]lfilter|filtre [aà] huile/i,"Yağ Filtresi","Filtre"],
+  [/polen filtre|kabin filtre|cabin (air )?filter|pollen ?filter|innenraumfilter/i,"Polen Filtresi","Filtre"],
+  [/hava filtre|air filter|luftfilter|filtre [aà] air/i,"Hava Filtresi","Filtre"],
+  [/yakıt filtre|yakit filtre|mazot filtre|benzin filtre|fuel filter|kraftstofffilter|dieselfilter/i,"Yakıt Filtresi","Filtre"],
+  [/motor yağı|motor yagi|engine oil|motor[oö]l|\b[05]w-?\d0\b|\b10w-?40\b/i,"Motor Yağı","Yağ & Sıvı"],
+  [/antifriz|coolant|antifreeze|k[uü]hlerfrost|frostschutz/i,"Antifriz","Yağ & Sıvı"],
+  [/şanzıman yağı|sanziman yagi|gear oil|transmission (fluid|oil)|getriebe[oö]l|\batf\b/i,"Şanzıman Yağı","Yağ & Sıvı"],
+  [/triger seti|triger kayış|timing belt kit|timing belt|zahnriemen(satz)?/i,"Triger Seti","Motor"],
+  [/triger zincir|timing chain|steuerkette/i,"Triger Zinciri Seti","Motor"],
+  [/v kayış|kanallı kayış|alternatör kayış|v-ribbed|poly ?v|keilrippenriemen|serpentine belt/i,"V Kayışı","Motor"],
+  [/gergi rulman|tensioner|spannrolle/i,"Gergi Rulmanı","Motor"],
+  [/devirdaim|water pump|wasserpumpe/i,"Devirdaim Pompası","Soğutma"],
+  [/termostat|thermostat/i,"Termostat","Soğutma"],
+  [/radyatör|radyator|radiator|k[uü]hler\b|wasserk[uü]hler/i,"Radyatör","Soğutma"],
+  [/motor takoz|engine mount|motorlager/i,"Motor Takozu","Motor"],
+  [/silindir kapak conta|head gasket|zylinderkopfdichtung/i,"Silindir Kapak Contası","Motor"],
+  [/conta|gasket|dichtung/i,"Conta","Motor"],
+  [/enjektör|enjektor|injector|einspritzd[uü]se/i,"Enjektör","Motor"],
+  [/buji|spark plug|z[uü]ndkerze|bougie/i,"Buji","Ateşleme & Elektrik"],
+  [/kızdırma buji|glow plug|gl[uü]hkerze/i,"Kızdırma Bujisi","Ateşleme & Elektrik"],
+  [/ateşleme bobin|bobin|ignition coil|z[uü]ndspule/i,"Ateşleme Bobini","Ateşleme & Elektrik"],
+  [/marş motor|starter motor|anlasser/i,"Marş Motoru","Ateşleme & Elektrik"],
+  [/alternatör|şarj dinamo|alternator|lichtmaschine/i,"Alternatör","Ateşleme & Elektrik"],
+  [/\bakü\b|\baku\b|car battery|starterbatterie|\bbattery\b/i,"Akü","Ateşleme & Elektrik"],
+  [/oksijen sensör|lambda|o2 sensor/i,"Oksijen (Lambda) Sensörü","Ateşleme & Elektrik"],
+  [/abs sensör|abs sensor|wheel speed sensor|drehzahlsensor/i,"ABS Sensörü","Ateşleme & Elektrik"],
+  [/sensör|sensor/i,"Sensör","Ateşleme & Elektrik"],
+  [/ön amortisör|front shock|sto[ßs]d[aä]mpfer vorder/i,"Ön Amortisör","Süspansiyon & Direksiyon"],
+  [/arka amortisör|rear shock|sto[ßs]d[aä]mpfer hinter/i,"Arka Amortisör","Süspansiyon & Direksiyon"],
+  [/amortisör|amortisor|shock absorber|sto[ßs]d[aä]mpfer|strut/i,"Amortisör","Süspansiyon & Direksiyon"],
+  [/amortisör takoz|strut mount|federbeinlager|top mount/i,"Amortisör Takozu","Süspansiyon & Direksiyon"],
+  [/helezon yay|coil spring|fahrwerksfeder/i,"Helezon Yay","Süspansiyon & Direksiyon"],
+  [/rot başı|rot basi|tie rod end|spurstangenkopf/i,"Rot Başı","Süspansiyon & Direksiyon"],
+  [/rot mili|aks rotu|tie rod|axialgelenk|spurstange/i,"Rot Mili","Süspansiyon & Direksiyon"],
+  [/rotil|ball joint|traggelenk/i,"Rotil","Süspansiyon & Direksiyon"],
+  [/salıncak|salincak|control arm|track control|querlenker|wishbone/i,"Salıncak","Süspansiyon & Direksiyon"],
+  [/z rot|viraj demir|stabilizer link|anti.?roll bar link|koppelstange|pendelst[uü]tze/i,"Z Rot (Viraj Demiri Askısı)","Süspansiyon & Direksiyon"],
+  [/porya|teker rulman|wheel bearing|radlager/i,"Teker Rulmanı","Süspansiyon & Direksiyon"],
+  [/debriyaj set|clutch kit|kupplungssatz/i,"Debriyaj Seti","Debriyaj & Şanzıman"],
+  [/volan|flywheel|schwungrad/i,"Volan","Debriyaj & Şanzıman"],
+  [/aks|drive ?shaft|cv joint|antriebswelle|gelenksatz/i,"Aks / Aks Kafası","Debriyaj & Şanzıman"],
+  [/egzoz|susturucu|exhaust|silencer|auspuff|katalizör|catalytic/i,"Egzoz Parçası","Egzoz"],
+  [/ampul|bulb|gl[uü]hlampe|\bh[147]\b|\bh11\b/i,"Ampul","Kaporta & Aydınlatma"],
+  [/far\b|headlight|scheinwerfer/i,"Far","Kaporta & Aydınlatma"],
+  [/stop lamba|tail light|r[uü]ckleuchte/i,"Stop Lambası","Kaporta & Aydınlatma"],
+  [/silecek|wiper blade|wischerblatt|wischer/i,"Silecek","Kaporta & Aydınlatma"],
+  [/ayna|mirror|au[ßs]enspiegel/i,"Ayna","Kaporta & Aydınlatma"],
+  [/klima kompresör|ac compressor|klimakompressor/i,"Klima Kompresörü","Soğutma"],
+];
+function detectType(text){
+  let best=null,bs=0;
+  for(const [re,name,cat] of PART_TYPES){const m=String(text).match(new RegExp(re.source,"gi"));if(m&&m.length>bs){bs=m.length;best={name,cat};}}
+  return best;
+}
+function tally(text){
+  const score=new Map();
+  for(const [re,name,cat] of PART_TYPES){const m=text.match(new RegExp(re.source,"gi"));if(m){const k=name;score.set(k,{name,cat,n:(score.get(k)?.n||0)+m.length});}}
+  // daha özel adlar (Ön/Arka) genel adı geçsin
+  const list=[...score.values()].sort((a,b)=>b.n-a.n);
+  for(const s of list){const gen=list.find(x=>x!==s&&s.name.endsWith(x.name.replace(/^(Ön|Arka) /,""))&&x.name!==s.name);if(gen&&/^(Ön|Arka) /.test(s.name)&&s.n>=Math.max(1,gen.n*0.3))s.n+=gen.n;}
+  return list.sort((a,b)=>b.n-a.n);
+}
+function htmlDoc(h){try{return new DOMParser().parseFromString(h,"text/html");}catch{return null;}}
+async function httpGet(url){
+  const headers={"User-Agent":"Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36","Accept-Language":"tr-TR,tr;q=0.9,en;q=0.8"};
+  if(window.CapHttp&&isNative){const r=await window.CapHttp.get({url,headers,connectTimeout:8000,readTimeout:8000,responseType:"text"});return {status:r.status,text:typeof r.data==="string"?r.data:JSON.stringify(r.data)};}
+  if(window.__httpStub)return window.__httpStub(url);
+  const r=await fetch(url,{headers});return {status:r.status,text:await r.text()};
+}
+async function searchDDG(q){
+  const r=await httpGet("https://html.duckduckgo.com/html/?kl=tr-tr&q="+encodeURIComponent(q));const d=htmlDoc(r.text);if(!d)return [];
+  return [...d.querySelectorAll(".result")].map(x=>{const a=x.querySelector(".result__a");let href=a&&a.getAttribute("href")||"";const m=href.match(/uddg=([^&]+)/);if(m)href=decodeURIComponent(m[1]);
+    return {title:(a&&a.textContent||"").trim(),snippet:(x.querySelector(".result__snippet")?.textContent||"").trim(),url:href};}).filter(x=>x.title&&!/duckduckgo\.com\/y\.js/.test(x.url)).slice(0,10);
+}
+async function searchBing(q){
+  const r=await httpGet("https://www.bing.com/search?setlang=tr&cc=TR&q="+encodeURIComponent(q));const d=htmlDoc(r.text);if(!d)return [];
+  return [...d.querySelectorAll("li.b_algo")].map(x=>{const a=x.querySelector("h2 a");return {title:(a&&a.textContent||"").trim(),snippet:(x.querySelector(".b_caption p, .b_lineclamp2, .b_algoSlug")?.textContent||"").trim(),url:a&&a.getAttribute("href")||""};}).filter(x=>x.title).slice(0,10);
+}
+async function lookupUPC(code){
+  if(!/^\d{12,13}$/.test(code))return [];
+  try{const r=await httpGet("https://api.upcitemdb.com/prod/trial/lookup?upc="+code);const j=JSON.parse(r.text);return (j.items||[]).map(i=>({title:[i.brand,i.title].filter(Boolean).join(" "),snippet:i.description||"",url:(i.offers&&i.offers[0]&&i.offers[0].link)||"",brand:i.brand}));}catch{return [];}
+}
+function vehicleHits(text){
+  const T=" "+norm(text)+" ",hits=new Map();
+  for(const m of MODELS){const parts=norm(m).split(" "),model=parts.slice(1).join(" ");if(model.length<2)continue;
+    const re=new RegExp("[^a-z0-9çğıöşü]"+reEsc(model)+"[^a-z0-9çğıöşü]","g"),n=(T.match(re)||[]).length;if(n)hits.set(m,n+(T.includes(" "+parts[0]+" ")?1:0));}
+  return [...hits.entries()].sort((a,b)=>b[1]-a[1]).slice(0,4).map(x=>x[0]);
+}
+async function webLookup({code,part,name,brand}){
+  const qs=[];
+  const pn=(part||"").trim();
+  if(pn)qs.push([brand,pn].filter(Boolean).join(" "));
+  if(code&&code!==pn)qs.push(code);
+  if(!qs.length&&name)qs.push(name);
+  if(!qs.length)throw new Error("Aranacak kod yok");
+  const jobs=[];qs.slice(0,2).forEach(q=>{jobs.push(searchBing(q).catch(()=>[]));jobs.push(searchDDG(q).catch(()=>[]));});
+  if(code)jobs.push(lookupUPC(code));
+  const all=(await Promise.all(jobs)).flat();
+  const seen=new Set(),results=all.filter(r=>{const k=r.url||r.title;if(seen.has(k))return false;seen.add(k);return true;});
+  if(!results.length)return {results:[],query:qs[0]};
+  const text=results.map(r=>r.title+" . "+r.snippet).join(" \n ");
+  const titles=results.map(r=>r.title).join(" \n ");
+  const types=tally(text),up=text.toLocaleUpperCase("tr");
+  const bcount=new Map();PART_BRANDS.forEach(b=>{const n=(up.match(new RegExp("(^|[^A-ZÇĞİÖŞÜ])"+reEsc(b)+"([^A-ZÇĞİÖŞÜ]|$)","g"))||[]).length;if(n)bcount.set(b,n);});
+  const upcBrand=results.find(r=>r.brand)?.brand;
+  const topBrand=upcBrand||[...bcount.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||null;
+  const vehicles=vehicleHits(text);
+  const conf=types[0]?(types[0].n>=4?"yüksek":types[0].n>=2?"orta":"düşük"):"düşük";
+  return {query:qs[0],results:results.slice(0,8),type:types[0]||null,alts:types.slice(1,4),brand:topBrand?niceBrand(String(topBrand).toLocaleUpperCase("tr")):null,vehicles,confidence:conf,titles};
+}
+async function webLookupForForm(auto){
+  const out=$("#webOut");if(!out)return;
+  const code=($("#pCodes")?.value||"").split(",").map(s=>s.trim()).filter(Boolean)[0]||"";
+  const part=$("#pPart")?.value.trim()||"",name=$("#pName")?.value.trim()||"",brand=$("#pBrand")?.value.trim()||"";
+  if(!code&&!part&&!name){if(!auto)out.innerHTML=`<div class="notice warn">Önce barkodu okut ya da parça numarasını yaz.</div>`;return;}
+  if(!navigator.onLine){out.innerHTML=`<div class="notice warn">İnternet yok. İnternet gelince “İnternette tanı”ya bas.</div>`;return;}
+  out.innerHTML=`<div class="notice info">İnternette aranıyor: <b class="mono">${esc(part||code||name)}</b>…</div>`;
+  try{
+    const r=await webLookup({code,part,name,brand});
+    if(!$("#webOut"))return;
+    S.lastLookup=r;
+    if(!r.results.length){out.innerHTML=`<div class="notice warn">İnternette sonuç bulunamadı. Kutudaki parça numarasını yazıp tekrar dene ya da Google'da bak.</div>${googleBtn(part||code)}`;return;}
+    const fill=(id,v)=>{const el=$(id);if(el&&v&&!el.value.trim()){el.value=v;el.classList.add("filled");}};
+    fill("#pName",r.type&&r.type.name);fill("#pBrand",r.brand);fill("#pVeh",r.vehicles.join(", "));
+    if(r.type&&$("#pCat")&&!document.querySelector("form[data-form=prod]")?.dataset.id)$("#pCat").value=r.type.cat;
+    if(r.vehicles.length){const d=$("#pVeh")?.closest("details");if(d)d.open=true;}
+    out.innerHTML=`<div class="card stack" style="gap:8px">
+      <div class="notice ${r.confidence==="yüksek"?"ok":r.confidence==="orta"?"info":"warn"}" style="font-size:14px">İnternetten bulunan (güven: <b>${r.confidence}</b>): ${r.type?`<b>${esc(r.type.name)}</b>`:"tür bulunamadı"}${r.brand?` · ${esc(r.brand)}`:""}${r.vehicles.length?` · ${esc(r.vehicles.join(", "))}`:""}. Boş alanlara yazıldı, kontrol et.</div>
+      ${r.alts.length?`<div class="chips">${[r.type,...r.alts].filter(Boolean).map(t=>`<button class="chipbtn" type="button" data-act="web-name" data-n="${esc(t.name)}" data-c="${esc(t.cat)}">${esc(t.name)}</button>`).join("")}</div>`:""}
+      <details class="more"><summary>Bulunan sonuçlar (${r.results.length})</summary><div class="stack" style="gap:6px">
+        ${r.results.map(x=>`<button class="item" type="button" data-act="web-title" data-n="${esc(x.title.slice(0,80))}" style="padding:8px 0"><div class="grow"><div class="t" style="font-size:14px">${esc(x.title)}</div><div class="s">${esc((x.snippet||"").slice(0,140))}</div></div></button>`).join("")}
+        <div class="muted" style="font-size:12px">Bir başlığa dokunursan ürün adı olarak yazılır.</div></div></details>
+      ${googleBtn(part||code)}</div>`;
+  }catch(e){console.warn(e);out.innerHTML=`<div class="notice warn">Arama yapılamadı (${esc(e.message||e)}).</div>${googleBtn(part||code)}`;}
+}
+function googleBtn(q){return q?`<button class="btn sm" type="button" data-act="open-url" data-url="${esc("https://www.google.com/search?q="+encodeURIComponent(q))}">Google'da aç: ${esc(q)}</button>`:"";}
+
+/* ---------- Bu telefona özel ayarlar (yazıcı vb.) ---------- */
+const LOCAL=(()=>{try{return JSON.parse(localStorage.getItem("sd:local")||"{}")}catch{return {}}})();
+function saveLocal(patch){Object.assign(LOCAL,patch);try{localStorage.setItem("sd:local",JSON.stringify(LOCAL));}catch{}}
+
+/* ---------- Telefonlar arası eşitleme (Firebase) ---------- */
+const SYNC={on:false,shop:null,pending:0,online:navigator.onLine,error:""};
+window.addEventListener("online",()=>{SYNC.online=true;syncPill();});
+window.addEventListener("offline",()=>{SYNC.online=false;syncPill();});
+const SYNC_COLS=["products","shelves","staff","orders","moves","vehicles","settings"];
+async function readSyncCfg(){try{return JSON.parse(await readText("sync.json"));}catch{return null;}}
+async function writeSyncCfg(o){if(o)await writeText("sync.json",JSON.stringify(o));else{try{if(FS)await FS.deleteFile({path:"sync.json",directory:"DATA"});else localStorage.removeItem("sd:sync.json");}catch{}}}
+function newShopId(){const a="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",r=new Uint8Array(24);crypto.getRandomValues(r);return [...r].map(x=>a[x%a.length]).join("");}
+let FAPP=null;
+async function fireInit(){
+  if(FAPP)return FAPP;
+  if(!window.FIREBASE_CONFIG)throw new Error("Eşitleme henüz kurulmadı");
+  await loadScript("vendor/fire.js");
+  const F=window.FB,app=F.initializeApp(window.FIREBASE_CONFIG);
+  const auth=F.initializeAuth(app,{persistence:F.indexedDBLocalPersistence});
+  await auth.authStateReady();
+  if(!auth.currentUser){
+    if(!navigator.onLine)throw new Error("İlk bağlantı için internet gerekli");
+    await F.signInAnonymously(auth);
+  }
+  const fs=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentSingleTabManager({})}),ignoreUndefinedProperties:true});
+  FAPP={F,app,auth,fs};return FAPP;
+}
+function trackWrite(p,what){
+  SYNC.pending++;syncPill();
+  p.then(()=>{SYNC.error="";},e=>{console.warn(e);SYNC.error=String(e&&(e.code||e.message)||e);logErr("Eşitleme ("+what+"): "+SYNC.error);})
+   .finally(()=>{SYNC.pending=Math.max(0,SYNC.pending-1);syncPill();});
+}
+function makeFireDB({F,fs},shop){
+  const data={};SYNC_COLS.forEach(c=>data[c]={});
+  const D=(c,i)=>F.doc(fs,"shops",shop,c,i),C=c=>F.collection(fs,"shops",shop,c);
+  const meta=s=>({fromCache:s.metadata.fromCache,hasPendingWrites:s.metadata.hasPendingWrites});
+  const wrapDoc=(s)=>{const d=s.exists()?s.data():undefined;return {id:s.id,exists:s.exists(),data:()=>d,metadata:meta(s)};};
+  const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+  // Yazmalar hemen telefona uygulanır; internete gönderim arkada sürer (çevrimdışıyken de çalışır).
+  const docRef=(c,i)=>({id:i,path:c+"/"+i,
+    async get(){try{return wrapDoc(await F.getDoc(D(c,i)));}catch{return {id:i,exists:!!data[c][i],data:()=>data[c][i],metadata:{}};}},
+    async set(v){data[c][i]=v;trackWrite(F.setDoc(D(c,i),v),c);},
+    async update(v){trackWrite(F.setDoc(D(c,i),v,{merge:true}),c);},
+    async delete(){delete data[c][i];trackWrite(F.deleteDoc(D(c,i)),c);},
+    onSnapshot(fn){return F.onSnapshot(D(c,i),{includeMetadataChanges:false},s=>{const w=wrapDoc(s);if(w.exists)data[c][i]=w.data();fn(w);},e=>{SYNC.error=e.code||e.message;logErr("Eşitleme: "+SYNC.error);syncPill();});}});
+  const colRef=(c,o={})=>({path:c,
+    doc:i=>docRef(c,i||newId()),
+    async add(v){const r=docRef(c,newId());await r.set(v);return r;},
+    orderBy:(f,dir="asc")=>colRef(c,{...o,order:[f,dir]}),
+    limit:n=>colRef(c,{...o,limit:n}),
+    _q(){const parts=[];if(o.order)parts.push(F.orderBy(o.order[0],o.order[1]));if(o.limit)parts.push(F.limit(o.limit));return parts.length?F.query(C(c),...parts):C(c);},
+    async get(){const s=await F.getDocs(this._q());const docs=s.docs.map(wrapDoc);return {docs,size:docs.length,empty:!docs.length,docChanges:()=>[],metadata:meta(s)};},
+    onSnapshot(fn){return F.onSnapshot(this._q(),s=>{const docs=s.docs.map(wrapDoc);if(!o.limit){data[c]={};}docs.forEach(d=>data[c][d.id]=d.data());fn({docs,size:docs.length,empty:!docs.length,docChanges:()=>[],metadata:meta(s)});syncPill();},e=>{SYNC.error=e.code||e.message;logErr("Eşitleme: "+SYNC.error);syncPill();});}});
+  return {doc:p=>{const [c,i]=p.split("/");return docRef(c,i);},collection:p=>colRef(p),_data:data,fire:true,
+    inc(c,i,field,key,delta){trackWrite(F.setDoc(D(c,i),{[field]:{[key]:F.increment(delta)}},{merge:true}),c);},
+    async _load(obj){await uploadAll(F,fs,shop,obj);}};
+}
+async function uploadAll(F,fs,shop,obj,onProgress){
+  const all=[];for(const c of SYNC_COLS)for(const [id,v] of Object.entries((obj&&obj[c])||{}))all.push([c,id,v]);
+  for(let i=0;i<all.length;i+=400){
+    const b=F.writeBatch(fs);all.slice(i,i+400).forEach(([c,id,v])=>b.set(F.doc(fs,"shops",shop,c,id),v));
+    await b.commit();onProgress&&onProgress(Math.min(all.length,i+400),all.length);
+  }
+  return all.length;
+}
+function syncPill(){
+  const c=$("#conn");if(!c)return;
+  if(!SYNC.on){if(S.ready){c.className="pill ok";c.textContent="Bu telefonda";}return;}
+  if(!SYNC.online){c.className="pill warn";c.textContent=SYNC.pending?`Çevrimdışı · ${SYNC.pending} bekliyor`:"Çevrimdışı";return;}
+  if(SYNC.error&&/permission|denied|unauth/i.test(SYNC.error)){c.className="pill bad";c.textContent="Eşitleme hatası";return;}
+  if(SYNC.pending){c.className="pill neu";c.textContent=`Gönderiliyor (${SYNC.pending})`;return;}
+  c.className="pill ok";c.textContent="Eşitlendi";
+}
+function snapshotData(){
+  if(db&&!db.fire&&db._data)return db._data;
+  const m=(map,key)=>Object.fromEntries([...map.values()].map(v=>{const {id,...r}=v;return [v[key]||id,r];}));
+  return {products:m(S.products,"id"),shelves:Object.fromEntries([...S.shelves.values()].map(v=>[v.code,v])),staff:m(S.staff,"id"),orders:m(S.orders,"id"),
+    moves:Object.fromEntries(S.moves.map(v=>{const {id,...r}=v;return [id,r];})),vehicles:Object.fromEntries([...S.vehicles.entries()]),settings:{main:S.settings}};
+}
+function syncCardHtml(){
+  if(!window.FIREBASE_CONFIG)return `<div class="card stack"><h3>Telefonlar arası eşitleme</h3><div class="notice info">Kurulum bekleniyor. Firebase bilgileri eklenince burada açılacak.</div></div>`;
+  if(!SYNC.on)return `<div class="card stack"><h3>Telefonlar arası eşitleme</h3>
+    <p class="muted" style="margin:0;font-size:14px">Açınca bütün kayıtlar internette yedeklenir ve dükkana katılan bütün telefonlar aynı depoyu anında görür. İnternet giderse çalışmaya devam eder, gelince eşitler.</p>
+    <button class="btn pri" data-act="sync-start">Bu telefonda başlat (ilk telefon)</button>
+    <button class="btn" data-act="sync-join">Dükkana katıl (QR okut)</button>
+    <form class="row" data-form="syncjoin"><input id="syncCode" class="grow mono" placeholder="veya dükkan kodunu yaz" autocomplete="off" autocapitalize="characters"><button class="btn">Katıl</button></form>
+    <div id="syncMsg"></div></div>`;
+  return `<div class="card stack"><h3>Telefonlar arası eşitleme</h3>
+    <div class="notice ok">Eşitleme açık. Bu telefondaki her değişiklik dükkandaki diğer telefonlara anında gider.</div>
+    <div class="muted" style="font-size:14px">Dükkan kodu: <b class="mono">${esc(SYNC.shop)}</b></div>
+    <button class="btn pri" data-act="sync-qr">Yeni telefon ekle (QR göster)</button>
+    <button class="btn sm danger" data-act="sync-leave" style="justify-self:start">Bu telefonda eşitlemeyi kapat</button></div>`;
+}
+async function syncStart(){
+  const msg=$("#syncMsg");const say=t=>{if(msg)msg.innerHTML=`<div class="notice info">${t}</div>`;};
+  try{
+    say("Bağlanıyor…");await persist();
+    const fa=await fireInit(),shop=newShopId();
+    const local=db.fire?snapshotData():db._data;
+    const n=await uploadAll(fa.F,fa.fs,shop,local,(a,b)=>say(`Kayıtlar yükleniyor… ${a}/${b}`));
+    await writeSyncCfg({shop,since:Date.now()});
+    say(`${n} kayıt yüklendi. Uygulama yeniden açılıyor…`);setTimeout(()=>location.reload(),800);
+  }catch(e){console.warn(e);if(msg)msg.innerHTML=`<div class="notice bad">Başlatılamadı: ${esc(e.message||e)}. İnternet bağlantısını kontrol et.</div>`;}
+}
+function syncJoinAsk(code){
+  code=String(code||"").replace(/^MD:S:/,"").trim().toUpperCase();
+  if(code.length<20){toast("Dükkan kodu hatalı");return;}
+  S.pendingShop=code;
+  openSheet(`${sheetHd("Dükkana katılınsın mı?")}
+    <p style="margin:0">Bu telefon dükkanın ortak deposuna bağlanacak. Bu telefondaki kayıtların yerine <b>dükkandaki kayıtlar</b> gelecek.</p>
+    <div class="notice warn">Bu telefonda ayrıca girdiğin kayıtlar varsa önce Ayarlar › İşletme › Yedek al ile yedekle.</div>
+    <div class="grid2"><button class="btn pri big" data-act="sync-join-ok">Evet, katıl</button><button class="btn big" data-act="close">Vazgeç</button></div>`);
+}
+async function syncJoin(){
+  const code=S.pendingShop;if(!code)return;
+  openSheet(`${sheetHd("Bağlanıyor")}<div class="notice info">Dükkana bağlanılıyor…</div>`);
+  try{
+    const fa=await fireInit();
+    const probe=await fa.F.getDocs(fa.F.query(fa.F.collection(fa.fs,"shops",code,"settings"),fa.F.limit(1)));
+    const probe2=probe.empty?await fa.F.getDocs(fa.F.query(fa.F.collection(fa.fs,"shops",code,"products"),fa.F.limit(1))):probe;
+    if(probe2.empty){openSheet(`${sheetHd("Dükkan bulunamadı")}<p style="margin:0">Bu kodla kayıtlı bir dükkan yok. İlk telefonda Ayarlar › İşletme › Yeni telefon ekle ile çıkan QR'ı okut.</p>`);return;}
+    await persist();await writeSyncCfg({shop:code,since:Date.now()});
+    location.reload();
+  }catch(e){console.warn(e);openSheet(`${sheetHd("Bağlanılamadı")}<p style="margin:0">${esc(e.message||e)}. İnternet bağlantısını kontrol et.</p>`);}
+}
+function syncQrSheet(){
+  const q=qrcode(0,"M");q.addData("MD:S:"+SYNC.shop);q.make();
+  openSheet(`${sheetHd("Yeni telefon ekle")}
+    <ol class="steps-ol"><li>Yeni telefona Servis Depo'yu kur ve aç.</li><li>Ayarlar › İşletme › <b>Dükkana katıl (QR okut)</b>'a bas.</li><li>Bu QR'ı okut.</li></ol>
+    <div style="background:#fff;padding:16px;border-radius:12px;justify-self:center">${q.createSvgTag({cellSize:6,margin:2,scalable:false})}</div>
+    <div class="muted" style="font-size:13px;text-align:center">Kod: <span class="mono">${esc(SYNC.shop)}</span><br>Bu QR'ı dükkan dışındaki kimseyle paylaşma.</div>`);
+}
+async function syncLeave(){
+  openSheet(`${sheetHd("Eşitleme kapatılsın mı?")}<p style="margin:0">Bu telefon dükkanın ortak deposundan ayrılır. Şu anki kayıtların bir kopyası bu telefonda kalır; diğer telefonlar etkilenmez.</p>
+    <div class="grid2"><button class="btn danger big" data-act="sync-leave-ok">Evet, kapat</button><button class="btn big" data-act="close">Vazgeç</button></div>`);
+}
+
 /* ---------- Yedek ---------- */
 async function exportBackup(){
   await persist();
-  const json=JSON.stringify({app:"servis-depo",v:1,exportedAt:Date.now(),data:db._data});
+  const json=JSON.stringify({app:"servis-depo",v:1,exportedAt:Date.now(),data:snapshotData()});
   try{
     await shareFile.save({filename:`servis-depo-yedek-${new Date().toISOString().slice(0,10)}.json`,data:new Blob([json],{type:"application/json"})});
     S.settings={...S.settings,lastBackup:Date.now()};await db.doc("settings/main").set(S.settings);
@@ -1543,11 +1881,17 @@ window.addEventListener("error",e=>logErr(e.message||e.error));
 window.addEventListener("unhandledrejection",e=>logErr(e.reason&&(e.reason.message||e.reason)));
 $("#restoreIn").addEventListener("change",ev=>{const f=ev.target.files?.[0];ev.target.value="";if(f)importBackup(f);});
 $("#ocrCam").addEventListener("change",ev=>{const f=ev.target.files?.[0];ev.target.value="";if(f)ocrFromFile(f);});
-db=makeDB();dl=shareFile;ai=null;
+dl=shareFile;ai=null;
 render();
 (async()=>{
+  const sc=await readSyncCfg().catch(()=>null);
+  if(sc&&sc.shop&&window.FIREBASE_CONFIG){
+    try{const fa=await fireInit();db=makeFireDB(fa,sc.shop);SYNC.on=true;SYNC.shop=sc.shop;}
+    catch(e){console.warn(e);logErr("Eşitleme açılamadı, bu telefondaki kayıtlarla devam: "+(e.message||e));}
+  }
+  if(!db)db=makeDB();
   const loaded=new Set();
-  const done=k=>{loaded.add(k);if(loaded.size>=6&&S.loadedOnce)S.ready=true;render();};
+  const done=k=>{loaded.add(k);if(loaded.size>=6&&S.loadedOnce)S.ready=true;if(db.fire)schedulePersist();render();};
   db.collection("products").onSnapshot(s=>{S.products=new Map(s.docs.map(d=>[d.id,{id:d.id,...d.data()}]));done("p");});
   db.collection("shelves").onSnapshot(s=>{S.shelves=new Map(s.docs.map(d=>[d.id,{...d.data(),code:d.data().code||d.id}]));done("s");});
   db.collection("staff").onSnapshot(s=>{S.staff=new Map(s.docs.map(d=>[d.id,{id:d.id,...d.data()}]));done("st");});
@@ -1556,7 +1900,7 @@ render();
   db.collection("vehicles").onSnapshot(s=>{S.vehicles=new Map(s.docs.map(d=>[d.id,{...d.data()}]));done("v");});
   db.doc("settings/main").onSnapshot(s=>{S.settings=s.exists?{...s.data()}:{};if(S.view==="ayar")render();});
   S.loading=true;
-  try{await Promise.race([loadDB(),new Promise(r=>setTimeout(r,5000))]);}catch(e){logErr("Kayıtlar okunamadı: "+(e&&e.message||e));}
+  if(!db.fire){try{await Promise.race([loadDB(),new Promise(r=>setTimeout(r,5000))]);}catch(e){logErr("Kayıtlar okunamadı: "+(e&&e.message||e));}}
   S.loading=false;S.loadedOnce=true;S.ready=true;render();
   document.addEventListener("visibilitychange",()=>{if(document.hidden){persist();closeScanner();}});
   if(APP){
