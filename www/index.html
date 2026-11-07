@@ -1547,12 +1547,29 @@ function guessLang(t){
   return "en";
 }
 const isCodeLike=w=>/\d/.test(w)||(/^[A-Z0-9\-\/.]+$/.test(w)&&w.length<=5);
+function dictTurkish(text){
+  const t=String(text);for(const [re,name] of PART_TYPES){const m=t.match(re);if(m&&m[0].length>=t.replace(/[^A-Za-zÇĞİÖŞÜçğıöşüÄÖÜäöüß ]/g,"").trim().length*0.6)return name;}return null;
+}
+function fixModelToken(w){
+  const W=w.toLocaleLowerCase("tr");if(W.length<4||/\d/.test(W))return null;
+  let best=null,bd=9;
+  for(const m of MODELS){const mm=norm(m).split(" ").slice(1).join(" ");if(mm.includes(" ")||Math.abs(mm.length-W.length)>2||mm.length<4)continue;const d=lev(W,mm);if(d<bd){bd=d;best=m.split(" ").slice(1).join(" ");}}
+  return bd>0&&bd<=(W.length>=6?2:1)?best:null;
+}
+function lev(a,b){const m=a.length,n=b.length,d=Array.from({length:m+1},(_,i)=>[i]);for(let j=1;j<=n;j++)d[0][j]=j;for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[m][n];}
 async function toTurkish(text){
-  text=String(text||"").trim();if(!text||!TRN)return text;
+  text=String(text||"").trim();if(!text)return text;
+  const dt=dictTurkish(text);if(dt)return dt;
+  if(!TRN)return text;
   if(!/[A-Za-zÄÖÜäöüß]{3}/.test(text))return text;
   const lang=guessLang(text);if(lang==="tr")return text;
   const k=lang+"|"+text;if(TRC.has(k))return TRC.get(k);
-  try{const r=await TRN.translate({text,sourceLanguage:lang,targetLanguage:"tr"});const out=(r&&r.text||text).trim();TRC.set(k,out);return out;}
+  try{
+    const keep=[];let src=text.replace(/[A-Za-zÄÖÜäöüß0-9\-]+/g,w=>{const up=w.toLocaleUpperCase("tr");if(BRANDS.includes(up)||MODELS.some(m=>norm(m).split(" ").includes(w.toLowerCase()))||/\d/.test(w)){keep.push(w);return "XQ"+(keep.length-1)+"QX";}return w;});
+    if(src===src.toUpperCase())src=src.toLowerCase();
+    const r=await TRN.translate({text:src,sourceLanguage:lang,targetLanguage:"tr"});
+    let out=(r&&r.text||src).trim().replace(/XQ\s*(\d+)\s*QX/gi,(_,i)=>keep[+i]||"");
+    out=out.charAt(0).toLocaleUpperCase("tr")+out.slice(1);TRC.set(k,out);return out;}
   catch(e){console.warn(e);return text;}
 }
 async function toTurkishMany(list){const out=[];for(const t of list)out.push(await toTurkish(t));return out;}
@@ -1629,7 +1646,7 @@ function handleOcrText(text,rawLines){
   S.ocrAcc={text,lines:rawLines};
   const lines=rawLines.map(l=>l.replace(/[|_~^`"“”]+/g," ").replace(/\s+/g," ").trim()).filter(l=>l.length>=2&&/[A-Za-zÇĞİÖŞÜçğıöşü0-9]{2}/.test(l));
   const words=[];lines.forEach(l=>l.split(" ").forEach(t=>{t=t.replace(/^[^\wÇĞİÖŞÜçğıöşü]+|[^\wÇĞİÖŞÜçğıöşü.\-/]+$/g,"");if(t.length>=2&&!words.includes(t))words.push(t);}));
-  ocrItems=[...new Set([...lines.filter(l=>l.includes(" ")),...words])].slice(0,60);
+  ocrItems=[...new Set([...lines.filter(l=>l.includes(" ")),...words])].slice(0,60).map(w=>w.split(" ").map(t=>fixModelToken(t)||t).join(" "));
   const up=text.toLocaleUpperCase("tr");
   const bar0=(up.match(/\b\d{13}\b|\b\d{12}\b/)||[])[0];
   const brand=findBrand(up,PART_BRANDS)||(eanBrand(bar0)||"").toLocaleUpperCase("tr")||findBrand(up,BRANDS)||null;
@@ -1711,7 +1728,20 @@ const PART_TYPES=[
   [/rotil|ball joint|traggelenk/i,"Rotil","Süspansiyon & Direksiyon"],
   [/salıncak|salincak|control arm|track control|querlenker|wishbone/i,"Salıncak","Süspansiyon & Direksiyon"],
   [/z rot|viraj demir|stabilizer link|anti.?roll bar link|koppelstange|pendelst[uü]tze/i,"Z Rot (Viraj Demiri Askısı)","Süspansiyon & Direksiyon"],
-  [/porya|teker rulman|wheel bearing|radlager/i,"Teker Rulmanı","Süspansiyon & Direksiyon"],
+  [/porya|teker rulman|tekerlek rulman|wheel bearing|wheel hub|radlager|radnabe|roulement de roue/i,"Teker Rulmanı","Süspansiyon & Direksiyon"],
+  [/debriyaj rulman|baskı rulman|release bearing|ausrücklager/i,"Debriyaj Baskı Rulmanı","Debriyaj & Şanzıman"],
+  [/aks körüğü|aks koruk|cv boot|achsmanschette/i,"Aks Körüğü","Debriyaj & Şanzıman"],
+  [/direksiyon kutusu|steering rack|lenkgetriebe/i,"Direksiyon Kutusu","Süspansiyon & Direksiyon"],
+  [/salıncak burç|control arm bush|querlenkerlager|silent ?block/i,"Salıncak Burcu","Süspansiyon & Direksiyon"],
+  [/egr valf|egr valve|agr-?ventil/i,"EGR Valfi","Motor"],
+  [/turbo|turbocharger|turbolader/i,"Turbo","Motor"],
+  [/yağ pompa|oil pump|[oö]lpumpe/i,"Yağ Pompası","Motor"],
+  [/yakıt pompa|fuel pump|kraftstoffpumpe/i,"Yakıt Pompası","Motor"],
+  [/kayış seti|belt kit|riemensatz/i,"Kayış Seti","Motor"],
+  [/fren hortum|brake hose|bremsschlauch/i,"Fren Hortumu","Fren"],
+  [/el freni teli|handbrake cable|handbremsseil/i,"El Freni Teli","Fren"],
+  [/radyatör hortum|radiator hose|k[uü]hlerschlauch/i,"Radyatör Hortumu","Soğutma"],
+  [/fan motor|radiator fan|l[uü]fter/i,"Fan Motoru","Soğutma"],
   [/debriyaj set|clutch kit|kupplungssatz/i,"Debriyaj Seti","Debriyaj & Şanzıman"],
   [/volan|flywheel|schwungrad/i,"Volan","Debriyaj & Şanzıman"],
   [/aks|drive ?shaft|cv joint|antriebswelle|gelenksatz/i,"Aks / Aks Kafası","Debriyaj & Şanzıman"],
@@ -1743,15 +1773,50 @@ async function httpGet(url){
   if(window.__httpStub)return window.__httpStub(url);
   const r=await fetch(url,{headers});return {status:r.status,text:await r.text()};
 }
-async function searchDDG(q){
-  const r=await httpGet("https://html.duckduckgo.com/html/?kl=tr-tr&q="+encodeURIComponent(q));const d=htmlDoc(r.text);if(!d)return [];
-  return [...d.querySelectorAll(".result")].map(x=>{const a=x.querySelector(".result__a");let href=a&&a.getAttribute("href")||"";const m=href.match(/uddg=([^&]+)/);if(m)href=decodeURIComponent(m[1]);
-    return {title:(a&&a.textContent||"").trim(),snippet:(x.querySelector(".result__snippet")?.textContent||"").trim(),url:href};}).filter(x=>x.title&&!/duckduckgo\.com\/y\.js/.test(x.url)).slice(0,10);
+/* ---------- İnternet araştırması: birden çok arama motoru + ürün sayfaları ---------- */
+const ENGINE_HOSTS=/(^|\.)(bing\.com|microsoft\.com|msn\.com|duckduckgo\.com|brave\.com|mojeek\.com|google\.[a-z.]+|gstatic\.com|youtube\.com|startpage\.com|yandex\.[a-z]+)$/i;
+function unwrapUrl(href,base){
+  try{
+    const u=new URL(href,base);
+    for(const k of ["uddg","u","url","q","target","r"]){const v=u.searchParams.get(k);if(v&&/^(https?:)?\/\//.test(decodeURIComponent(v)))return new URL(decodeURIComponent(v),base).href;
+      if(v&&k==="u"&&/^a1/.test(v)){try{return atob(v.slice(2).replace(/-/g,"+").replace(/_/g,"/"));}catch{}}}
+    return u.href;
+  }catch{return "";}
+}
+function parseGeneric(html,base){
+  const d=htmlDoc(html);if(!d)return [];
+  const out=[],seen=new Set();
+  for(const a of d.querySelectorAll("a[href]")){
+    const url=unwrapUrl(a.getAttribute("href"),base);if(!/^https?:/.test(url))continue;
+    let host="";try{host=new URL(url).hostname;}catch{continue;}
+    if(ENGINE_HOSTS.test(host)||seen.has(url))continue;
+    const title=(a.textContent||"").replace(/\s+/g," ").trim();if(title.length<15||title.length>220)continue;
+    const box=a.closest("li,article,[data-type],.snippet,.result,div")||a.parentElement;
+    let snippet=(box?box.textContent:"").replace(/\s+/g," ").replace(title,"").trim().slice(0,320);
+    seen.add(url);out.push({title,snippet,url});
+    if(out.length>=12)break;
+  }
+  return out;
 }
 async function searchBing(q){
-  const r=await httpGet("https://www.bing.com/search?setlang=tr&cc=TR&q="+encodeURIComponent(q));const d=htmlDoc(r.text);if(!d)return [];
-  return [...d.querySelectorAll("li.b_algo")].map(x=>{const a=x.querySelector("h2 a");return {title:(a&&a.textContent||"").trim(),snippet:(x.querySelector(".b_caption p, .b_lineclamp2, .b_algoSlug")?.textContent||"").trim(),url:a&&a.getAttribute("href")||""};}).filter(x=>x.title).slice(0,10);
+  const base="https://www.bing.com/search?setlang=tr&cc=TR&count=20&q="+encodeURIComponent(q);
+  const r=await httpGet(base);const d=htmlDoc(r.text);if(!d)return [];
+  let res=[...d.querySelectorAll("li.b_algo")].map(x=>{const a=x.querySelector("h2 a");return {title:(a&&a.textContent||"").trim(),snippet:(x.querySelector(".b_caption p, .b_lineclamp2, .b_lineclamp3, .b_algoSlug")?.textContent||"").trim(),url:unwrapUrl(a&&a.getAttribute("href")||"",base)};}).filter(x=>x.title);
+  if(res.length<2)res=parseGeneric(r.text,base);
+  return res.slice(0,12);
 }
+async function searchDDG(q){
+  const base="https://html.duckduckgo.com/html/?kl=tr-tr&q="+encodeURIComponent(q);
+  const r=await httpGet(base);const d=htmlDoc(r.text);if(!d)return [];
+  let res=[...d.querySelectorAll(".result")].map(x=>{const a=x.querySelector(".result__a");return {title:(a&&a.textContent||"").trim(),snippet:(x.querySelector(".result__snippet")?.textContent||"").trim(),url:unwrapUrl(a&&a.getAttribute("href")||"",base)};}).filter(x=>x.title&&!/y\.js/.test(x.url));
+  if(res.length<2)res=parseGeneric(r.text,base);
+  return res.slice(0,12);
+}
+async function searchBrave(q){const base="https://search.brave.com/search?source=web&q="+encodeURIComponent(q);const r=await httpGet(base);return parseGeneric(r.text,base);}
+async function searchMojeek(q){const base="https://www.mojeek.com/search?q="+encodeURIComponent(q);const r=await httpGet(base);return parseGeneric(r.text,base);}
+const SITE_RANK=[/autodoc\.|onlinecarparts\.|auto-doc\.|autoteiledirekt\.|pkwteile\./,/trendyol\.com|hepsiburada\.com|n11\.com|amazon\.com\.tr|ciceksepeti/,/7zap|partsouq|catcar|tecalliance|febi|trw|bosch|skf|mann-filter|mahle|valeo|sachs|lemfoerder|ngk/,/./];
+const siteRank=u=>{const i=SITE_RANK.findIndex(re=>re.test(u||""));return i<0?9:i;};
+
 async function lookupUPC(code){
   if(!/^\d{12,13}$/.test(code))return [];
   try{const r=await httpGet("https://api.upcitemdb.com/prod/trial/lookup?upc="+code);const j=JSON.parse(r.text);return (j.items||[]).map(i=>({title:[i.brand,i.title].filter(Boolean).join(" "),snippet:i.description||"",url:(i.offers&&i.offers[0]&&i.offers[0].link)||"",brand:i.brand}));}catch{return [];}
@@ -1786,7 +1851,8 @@ async function webLookup({code,part,name,brand}){
   return {query:qs[0],results:results.slice(0,8),type:types[0]||null,alts:types.slice(1,4),brand:topBrand?niceBrand(String(topBrand).toLocaleUpperCase("tr")):null,vehicles,confidence:conf,titles};
 }
 /* ---------- Parça tanıma motoru ---------- */
-const keyOf=x=>norm(x).replace(/[^a-z0-9]/g,"");
+const normI=x=>String(x||"").toLocaleLowerCase("tr").replace(/ı/g,"i").replace(/i̇/g,"i").replace(/\s+/g," ").trim();
+const keyOf=x=>normI(x).replace(/[^a-z0-9]/g,"");
 function autoFill(id,v,force){const el=$(id);if(!el||v==null||String(v).trim()==="")return false;if(el.dataset.user==="1"&&!force)return false;el.value=String(v).trim();el.classList.add("filled");return true;}
 function addCode(c){c=String(c||"").trim();if(!c)return;const el=$("#pCodes");if(!el)return;const cur=el.value.split(",").map(s=>s.trim()).filter(Boolean);if(!cur.some(x=>keyOf(x)===keyOf(c))){cur.push(c);el.value=cur.join(", ");el.classList.add("filled");}}
 function catalogHit(code,part){
@@ -1805,14 +1871,16 @@ async function fetchPage(url){
   try{const r=await Promise.race([httpGet(url),new Promise((_,rej)=>setTimeout(()=>rej(new Error("zaman")),7000))]);if(!r||r.status>=400)return null;
     const h=String(r.text).slice(0,600000);return {url,ld:jsonLdProducts(h),title:metaOf(h,"og:title")||(h.match(/<title[^>]*>([^<]{3,200})/i)||[])[1]||"",desc:metaOf(h,"og:description")||metaOf(h,"description"),text:stripHtml(h).slice(0,120000)};}catch{return null;}
 }
-const YEARS=/((?:19|20)\d{2})\s*(?:[-–—\/]|ile|to|bis|\.\.)\s*((?:19|20)\d{2}|\d{2}\b|günümüz|present|heute)?/i;
+const YEARS=/(?:\d{1,2}[.\/])?((?:19|20)\d{2})\s*(?:[-–—]|ile|to|bis|\.\.)\s*(?:\d{1,2}[.\/])?((?:19|20)\d{2}|günümüz|present|heute|\.\.\.)?/i;
 function vehicleFits(texts){
-  const T=" "+norm(texts.join(" \n "))+" ",hits=new Map();
-  for(const m of MODELS){const parts=norm(m).split(" "),model=parts.slice(1).join(" ");if(model.length<2||/^\d+$/.test(model)&&model.length<3)continue;
-    const re=new RegExp("[^a-z0-9çğıöşü]"+reEsc(model)+"(?:\\s*(i{1,3}|iv|v|mk ?\\d))?[^a-z0-9çğıöşü]","g");let mm,n=0,yrs=new Map(),gen=new Map();
-    while((mm=re.exec(T))){n++;if(mm[1])gen.set(mm[1].toUpperCase(),(gen.get(mm[1].toUpperCase())||0)+1);const after=T.slice(mm.index,mm.index+60),y=after.match(YEARS);if(y){let b=y[2]||"";if(/^\d{2}$/.test(b))b=(+b>50?"19":"20")+b;if(/günümüz|present|heute/.test(b))b="";const k=y[1]+"–"+b;yrs.set(k,(yrs.get(k)||0)+1);}}
+  const T=" "+normI(texts.join(" \n "))+" ",hits=new Map();
+  for(const m of MODELS){const parts=normI(m).split(" "),model=parts.slice(1).join(" ");if(model.length<2)continue;
+    const numeric=/^\d+$/.test(model);
+    const re=new RegExp((numeric?"[^a-z0-9çğöşü]"+reEsc(parts[0])+"\\s+":"[^a-z0-9çğöşü]")+reEsc(model)+"(?:\\s*(i{1,3}|iv|v|mk ?\\d))?[^a-z0-9çğöşü]","g");let mm,n=0,yrs=new Map(),gen=new Map();
+    while((mm=re.exec(T))){n++;if(mm[1])gen.set(mm[1].toUpperCase(),(gen.get(mm[1].toUpperCase())||0)+1);const after=T.slice(mm.index+1,mm.index+100),kz=after.match(/^\S+(?:\s+\S+){0,2}?\s*\(([a-z0-9]{2,4})[a-z0-9\/_]*\)/i);if(kz)gen.set(kz[1].toUpperCase(),(gen.get(kz[1].toUpperCase())||0)+2);const y=after.match(YEARS);if(y){let b=y[2]||"";if(!/^(19|20)\d{2}$/.test(b))b="";const k=y[1]+"–"+b;yrs.set(k,(yrs.get(k)||0)+1);}}
     if(n){const make=parts[0];hits.set(m,{name:m,n:n+(T.includes(" "+make+" ")?1:0),years:[...yrs.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"",gen:[...gen.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||""});}}
-  return [...hits.values()].sort((a,b)=>b.n-a.n).slice(0,5).map(h=>h.name+(h.gen?" "+h.gen:"")+(h.years?` (${h.years})`:""));
+  const list=[...hits.values()].sort((a,b)=>b.n-a.n),top=list[0]?list[0].n:0;
+  return list.filter(h=>h.n>=Math.max(1,top*0.15)).slice(0,10).map(h=>h.name+(h.gen?" "+h.gen:"")+(h.years?` (${h.years})`:""));
 }
 function oeNumbers(text,pn){
   const out=new Set();const re=/\b(?:OE|OEM|O\.E\.|orijinal\s*(?:no|numara(?:sı)?)|Vergleichsnummer|OE[- ]?Nr\.?)\s*[:.]?\s*((?:[A-Z0-9][A-Z0-9 .\-\/]{3,18}[A-Z0-9](?:\s*[,;]\s*)?){1,4})/gi;let m;
@@ -1828,15 +1896,21 @@ async function identify({code,part,name,brand}){
   if(pn)qs.push(pn+" yedek parça");
   if(!qs.length&&name)qs.push(name);
   if(!qs.length)throw new Error("Aranacak kod yok");
-  const jobs=[];qs.slice(0,3).forEach((q,i)=>{jobs.push(searchBing(q).catch(()=>[]));if(i<2)jobs.push(searchDDG(q).catch(()=>[]));});
+  const pq=pn?`"${pn}"`:"";
+  const plan=[
+    [searchBing,qs[0]],[searchDDG,qs[0]],[searchBrave,qs[0]],[searchMojeek,qs[0]],
+    ...(pn?[[searchBing,`${pq} uyumlu araçlar`],[searchBing,`${pq} autodoc`],[searchBing,`${pq} trendyol OR hepsiburada`],[searchDDG,`${pq} vehicles`]]:[]),
+    ...(code&&keyOf(code)!==keyOf(pn)?[[searchBing,`"${code}"`],[searchDDG,`"${code}"`]]:[]),
+  ];
+  const jobs=plan.map(([fn,q])=>fn(q).catch(()=>[]));
   if(code)jobs.push(lookupUPC(code));
   const all=(await Promise.all(jobs)).flat();
   const seen=new Set(),results=all.filter(r=>{const k=r.url||r.title;if(!k||seen.has(k))return false;seen.add(k);return true;});
   const keys=[keyOf(code),keyOf(pn)].filter(k=>k.length>=5);
   const mentions=r=>keys.length&&keys.some(k=>keyOf(r.title+" "+r.snippet+" "+r.url).includes(k));
-  const strong=results.filter(mentions),use=strong.length?strong:results;
+  const strong=results.filter(mentions).sort((a,b)=>siteRank(a.url)-siteRank(b.url)),use=strong.length?strong:results;
   // En güvenilir sonuçların sayfalarını aç: ürün bilgisi (JSON-LD), uyumlu araç listesi
-  const pages=(await Promise.all(use.slice(0,3).map(r=>fetchPage(r.url)))).filter(Boolean);
+  const pages=(await Promise.all(use.slice(0,6).map(r=>fetchPage(r.url)))).filter(p=>p&&(!keys.length||keys.some(k=>keyOf(p.title+" "+p.text.slice(0,40000)).includes(k))));
   const ld=pages.flatMap(p=>p.ld.filter(x=>!keys.length||keys.some(k=>keyOf([x.name,x.mpn,x.gtin,x.desc].join(" ")).includes(k))||p.ld.length===1));
   const texts=[...use.map(r=>r.title+" . "+r.snippet),...ld.map(x=>x.name+" . "+x.name+" . "+x.name+" . "+x.desc),...pages.map(p=>p.title+" . "+p.desc)];
   const types=tally(texts.join(" \n "));
@@ -1848,11 +1922,12 @@ async function identify({code,part,name,brand}){
   const vehicles=vehicleFits([...texts,...pages.map(p=>p.text.slice(0,60000))]);
   const oe=oeNumbers([...texts,...pages.map(p=>p.text.slice(0,60000))].join(" "),pn||ldMpn||"");
   let nm=types[0]?types[0].name:"";
+  if(nm&&!/^(Ön|Arka) /.test(nm)){const T=norm(texts.join(" ")),f=(T.match(/\b(ön|front|vorder\w*|avant)\b/g)||[]).length,b=(T.match(/\b(arka|rear|hinter\w*|arrière)\b/g)||[]).length;if(f>=2&&f>b*2)nm+=" (Ön)";else if(b>=2&&b>f*2)nm+=" (Arka)";}
   if(!nm&&ld[0]&&ld[0].name)nm=cleanTitle(await toTurkish(ld[0].name));
   const agree=types[0]?types[0].n/Math.max(1,types.reduce((a,t)=>a+t.n,0)):0;
-  let pct=0;if(nm){pct=30+Math.min(30,strong.length*8)+(ld.length?20:0)+Math.round(agree*15)+(brandRaw?5:0);pct=Math.min(98,pct);}
+  let pct=0;if(nm){pct=30+Math.min(30,strong.length*6)+(ld.length?15:0)+(pages.length?10:0)+Math.round(agree*10)+(brandRaw?5:0);pct=Math.min(98,pct);}
   if(!strong.length)pct=Math.min(pct,45);
-  return {name:nm,cat:types[0]?.cat||"",alts:types.slice(1,4),brand:brandRaw?niceBrand(String(brandRaw).toLocaleUpperCase("tr")):null,partNo:pn||ldMpn||"",vehicles,oe,pct,sources:strong.length,results:use.slice(0,8),query:qs[0]};
+  return {pages:pages.length,name:nm,cat:types[0]?.cat||"",alts:types.slice(1,4),brand:brandRaw?niceBrand(String(brandRaw).toLocaleUpperCase("tr")):null,partNo:pn||ldMpn||"",vehicles,oe,pct,sources:strong.length,results:use.slice(0,8),query:qs[0]};
 }
 function idCardHtml(r){
   if(!r)return "";
@@ -1860,9 +1935,9 @@ function idCardHtml(r){
   return `<div class="card stack idcard ${lvl}" style="gap:6px">
     <div class="row"><b class="grow" style="font-size:18px">${esc(r.name||"Tür bulunamadı")}</b><span class="pill ${r.pct>=75?"ok":r.pct>=50?"neu":"warn"}">${r.fromCatalog?"Kayıtlı":`%${r.pct}`}</span></div>
     ${r.brand||r.partNo?`<div>${r.brand?`<b>${esc(r.brand)}</b>`:""}${r.partNo?` · <span class="mono">${esc(r.partNo)}</span>`:""}</div>`:""}
-    ${r.vehicles.length?`<div style="font-size:14px"><span class="muted">Uyumlu:</span> ${esc(r.vehicles.join(", "))}</div>`:""}
+    ${r.vehicles.length?`<div style="font-size:14px"><div class="muted">Uyumlu araçlar:</div><ul style="margin:4px 0 0;padding-left:20px">${r.vehicles.map(v=>`<li>${esc(v)}</li>`).join("")}</ul></div>`:""}
     ${r.oe&&r.oe.length?`<div style="font-size:14px"><span class="muted">OE no:</span> <span class="mono">${esc(r.oe.join(", "))}</span></div>`:""}
-    <div class="muted" style="font-size:12px">${r.fromCatalog?"Bu kod daha önce kaydedilmiş; bilgiler oradan geldi.":r.sources?`Kodu birebir geçen ${r.sources} kaynaktan birleştirildi.`:"Kodu birebir geçen kaynak bulunamadı, tahmin zayıf."} Yanlışsa alanı düzelt.</div></div>`;
+    <div class="muted" style="font-size:12px">${r.fromCatalog?"Bu kod daha önce kaydedilmiş; bilgiler oradan geldi.":r.sources?`Kodu birebir geçen ${r.sources} kaynak bulundu, ${r.pages||0} ürün sayfası okundu.`:"Kodu birebir geçen kaynak bulunamadı, tahmin zayıf."} Yanlışsa alanı düzelt.</div></div>`;
 }
 
 async function webLookupForForm(auto){
