@@ -10,6 +10,7 @@ android {
         def runNo = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
         versionCode = Integer.parseInt(runNo)
         versionName = "1.0." + runNo
+        ndk { abiFilters "arm64-v8a", "armeabi-v7a" } // sadece telefon işlemcileri (emülatör kütüphaneleri çıkarıldı)
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
