@@ -182,6 +182,11 @@ html.native-scan body::before{display:none}
 html.native-scan body>*:not(#scanner){visibility:hidden}
 html.native-scan #scanner{background:transparent}
 html.native-scan #scanVideo{display:none}
+.rowitem{display:flex;align-items:center;border-top:1px solid var(--line)}
+.rowitem:first-child{border-top:0}
+.rowitem>.item{border-top:0;flex:1;min-width:0}
+.delbtn{color:var(--bad);margin-right:6px;flex:none}
+.item.picked{background:var(--bad-soft)}
 .withmic{display:flex;gap:6px;align-items:stretch}
 .withmic>input,.withmic>textarea{flex:1;min-width:0}
 .micbtn{flex:none;width:48px;border:1.5px solid var(--line);background:var(--surface);color:var(--accent);border-radius:10px;display:grid;place-items:center;cursor:pointer}
@@ -243,6 +248,7 @@ const IC={
   mic:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>`,
   globe:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>`,
   print:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg>`,
+  trash:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>`,
   check:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg>`,
 };
 const S={products:new Map(),vehicles:new Map(),shelves:new Map(),orders:new Map(),staff:new Map(),moves:[],settings:{},
@@ -319,6 +325,24 @@ function dueHtml(){
   return `<section class="stack"><div class="sectionhd"><h3>Bakımı yaklaşanlar</h3><span class="muted">${due.length} araç</span></div><div class="list">${due.slice(0,6).map(v=>{const d=Math.round((v.nextDate-Date.now())/864e5);
     return `<div class="item" style="cursor:default"><div class="grow"><div class="row"><span class="tag">${esc(v.plate)}</span><span class="t">${esc(v.model||"")}</span></div><div class="s">${esc(v.owner||"")}${v.nextKm?` · ${kmFmt(v.nextKm)} km`:""} · ${d<0?`${-d} gün geçti`:`${d} gün kaldı`}</div></div>${v.phone?`<button class="btn sm" data-act="remind" data-k="${esc(plateKey(v.plate))}">Hatırlat</button>`:""}</div>`;}).join("")}</div></section>`;
 }
+function prodRow(p){return `<div class="rowitem">${findItem(p)}<button class="iconbtn delbtn" data-act="del-one" data-id="${esc(p.id)}" aria-label="${esc(p.name)} sil">${IC.trash}</button></div>`;}
+function delItem(p){const on=S.delSel.has(p.id);return `<button class="item ${on?"picked":""}" data-act="del-pick" data-id="${esc(p.id)}"><input type="checkbox" tabindex="-1" ${on?"checked":""} style="width:24px;height:24px;flex:none;pointer-events:none"><div class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc([p.brand,p.partNo].filter(Boolean).join(" · "))} · depoda ${qtyOf(p)} ${esc(unitOf(p))}</div></div></button>`;}
+async function deleteProducts(ids){
+  let n=0;
+  for(const id of ids){const p=S.products.get(id);if(!p)continue;
+    const q=qtyOf(p);
+    try{await db.doc("products/"+id).delete();if(q>0)await addMove({pid:id,name:p.name,type:"del",qty:q,shelf:locsOf(p).map(x=>x[0]).join(",")});n++;}catch(e){fail(e,"Silme");}}
+  return n;
+}
+function delAsk(ids){
+  const ps=ids.map(i=>S.products.get(i)).filter(Boolean);if(!ps.length)return;
+  const stock=ps.reduce((a,p)=>a+qtyOf(p),0);
+  S.delIds=ps.map(p=>p.id);
+  openSheet(`${sheetHd(ps.length>1?`${ps.length} ürün silinsin mi?`:"Ürün silinsin mi?")}
+    <div class="list">${ps.slice(0,8).map(p=>`<div class="item" style="cursor:default"><div class="grow"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.brand||"")}</div></div><b>${qtyOf(p)}</b></div>`).join("")}${ps.length>8?`<div class="item muted" style="cursor:default">… ve ${ps.length-8} ürün daha</div>`:""}</div>
+    ${stock?`<div class="notice warn">Depoda toplam <b>${stock}</b> adet görünüyor. Silince stoktan da düşer; aylık raporda “Silindi” olarak kalır.</div>`:""}
+    <div class="grid2"><button class="btn danger big" data-act="del-ok">Evet, sil</button><button class="btn big" data-act="close">Vazgeç</button></div>`);
+}
 function findItem(p){
   const [k]=stat(p),l=locsOf(p);
   return `<button class="item" data-act="prod" data-id="${esc(p.id)}">
@@ -327,10 +351,10 @@ function findItem(p){
     <div class="qty ${k==="ok"?"":k}">${qtyOf(p)}<small>${esc(unitOf(p))}</small></div></button>`;
 }
 function moveItem(m){
-  const t={in:["ok","Giriş"],out:["acc","Çıkış"],count:["neu","Sayım"]}[m.type]||["neu",m.type];
+  const t={in:["ok","Giriş"],out:["acc","Çıkış"],count:["neu","Sayım"],del:["bad","Silindi"]}[m.type]||["neu",m.type];
   return `<div class="item" style="cursor:default"><span class="pill ${t[0]}">${t[1]}</span>
     <div class="grow"><div class="t">${esc(m.name)}</div><div class="s">${fmtDate(m.ts)}${m.shelf?` · raf ${esc(m.shelf)}`:""}${m.plate?` · ${esc(m.plate)}`:""}</div></div>
-    <div class="qty" style="font-size:22px">${m.type==="out"?"−"+m.qty:(m.qty>0?"+":"")+m.qty}</div></div>`;
+    <div class="qty" style="font-size:22px">${m.type==="out"||m.type==="del"?"−"+m.qty:(m.qty>0?"+":"")+m.qty}</div></div>`;
 }
 
 /* ================= OKUT (task) ================= */
@@ -685,7 +709,7 @@ function vAyar(){
       <div class="shelfgrid">${sh.map(s=>`<button class="shelf" data-act="shelf" data-c="${esc(s.code)}"><b>${esc(s.code)}</b><span>${cnt(s.code)} çeşit</span></button>`).join("")}</div>`:`<div class="card empty">Henüz raf yok.</div>`}`;
   } else if(S.sub==="rapor"){
     const mm=S.moves.filter(m=>ym(m.ts)===S.month),agg=new Map();
-    mm.forEach(m=>{const a=agg.get(m.pid)||{name:m.name,in:0,out:0,cnt:0};if(m.type==="in")a.in+=m.qty;else if(m.type==="out")a.out+=m.qty;else a.cnt+=m.qty;agg.set(m.pid,a);});
+    mm.forEach(m=>{const a=agg.get(m.pid)||{name:m.name,in:0,out:0,cnt:0};if(m.type==="in")a.in+=m.qty;else if(m.type==="out")a.out+=m.qty;else if(m.type==="count")a.cnt+=m.qty;agg.set(m.pid,a);});
     const rows=[...agg.entries()].sort((a,b)=>(b[1].out+b[1].in)-(a[1].out+a[1].in));
     const top=rows.filter(r=>r[1].out>0).sort((a,b)=>b[1].out-a[1].out).slice(0,3);
     b=`<div class="row"><label class="f grow">Ay <input type="month" id="month" value="${S.month}" data-in="month"></label><button class="btn" data-act="csv" style="align-self:end">Excel'e aktar</button></div>
@@ -720,8 +744,11 @@ function vAyar(){
     <div class="stack"><h3>Hatırlanan işçilik fiyatları</h3><p class="muted" style="margin:0;font-size:14px">İş emrinde yazdığın son fiyat kaydedilir; aynı iş eklenince otomatik gelir. KDV hariç.</p>
     ${lab.length?`<div class="list">${lab.map(([t,v])=>`<div class="item" style="cursor:default"><span class="grow">${esc(t)}</span><b>${money(v)}</b></div>`).join("")}</div>`:`<div class="card empty">Henüz fiyat yok.</div>`}</div>`;
   } else {
-    const ps=[...S.products.values()].sort((a,b)=>a.name.localeCompare(b.name,"tr"));
-    b=`<button class="btn" data-act="prod-new">+ Elle ürün ekle</button>${ps.length?`<div class="list">${ps.map(findItem).join("")}</div>`:`<div class="card empty">Ürün yok.</div>`}`;
+    const ps=[...S.products.values()].sort((a,b)=>a.name.localeCompare(b.name,"tr")),sel=S.delSel;
+    b=`<div class="row"><button class="btn grow" data-act="prod-new">+ Elle ürün ekle</button>${ps.length?(sel?`<button class="btn" data-act="del-mode">Vazgeç</button>`:`<button class="btn danger" data-act="del-mode">Ürün sil</button>`):""}</div>
+    ${sel?`<div class="notice warn">Silinecek ürünlere dokun, sonra alttaki “Sil” butonuna bas.</div>`:""}
+    ${ps.length?`<div class="list">${ps.map(p=>sel?delItem(p):prodRow(p)).join("")}</div>`:`<div class="card empty">Ürün yok.</div>`}
+    ${sel&&sel.size?`<button class="btn danger big" data-act="del-ask" style="position:sticky;bottom:calc(96px + env(safe-area-inset-bottom,0px))">Seçilenleri sil (${sel.size})</button>`:""}`;
   }
   return `${offlineNote()}<section class="stack"><h2>Ayarlar</h2><div class="chips">${tabs.map(([k,v])=>`<button class="chipbtn" data-act="sub" data-s="${k}" aria-pressed="${S.sub===k}">${v}</button>`).join("")}</div></section>${b}`;
 }
@@ -741,7 +768,7 @@ function prodSheet(id){
     <div class="muted">${esc([p.brand,p.partNo,p.vehicle].filter(Boolean).join(" · "))}${+p.price?` · ${money(p.price)} + KDV`:""}</div>
   </div>
   <div class="grid2"><button class="btn pri big" data-act="start-in" data-id="${esc(id)}">Geldi</button><button class="btn big" data-act="start-out" data-id="${esc(id)}" ${l.length?"":"disabled"}>Al</button></div>
-  <div class="row"><button class="btn sm" data-act="label" data-id="${esc(id)}">Etiket bas</button><button class="btn sm" data-act="prod-edit" data-id="${esc(id)}">Düzenle</button></div>
+  <div class="row"><button class="btn sm" data-act="label" data-id="${esc(id)}">Etiket bas</button><button class="btn sm" data-act="prod-edit" data-id="${esc(id)}">Düzenle</button><span class="spacer"></span><button class="btn sm danger" data-act="del-one" data-id="${esc(id)}">${IC.trash}Sil</button></div>
   ${mv.length?`<div class="stack" style="gap:6px"><div class="eyebrow">Son hareketler</div><div class="list">${mv.map(moveItem).join("")}</div></div>`:""}
   <details class="more"><summary>Diğer bilgiler</summary><div class="stack" style="gap:4px;font-size:15px">
     ${[["Kategori",p.category],["Barkodlar",(p.codes||[]).join(", ")],["Min. stok",p.min],["Not",p.notes]].filter(r=>r[1]).map(([a,b])=>`<div><span class="muted">${a}:</span> ${esc(b)}</div>`).join("")}
@@ -1043,8 +1070,9 @@ function resolve(raw){
   if(raw.startsWith("MD:R:"))return {kind:"shelf",code:raw.slice(5)};
   if(raw.startsWith("MD:P:"))return {kind:"prod",id:raw.slice(5)};
   const sc=shelfCode(raw);if(S.shelves.has(sc))return {kind:"shelf",code:sc};
-  const n=norm(raw);
-  for(const p of S.products.values())if((p.codes||[]).some(c=>norm(c)===n)||(p.partNo&&norm(p.partNo)===n))return {kind:"prod",id:p.id};
+  const n=norm(raw),nk=n.replace(/[^a-z0-9çğıöşü]/g,"");
+  const key=x=>norm(x).replace(/[^a-z0-9çğıöşü]/g,"");
+  for(const p of S.products.values())if((p.codes||[]).some(c=>norm(c)===n||(nk.length>=5&&key(c)===nk))||(p.partNo&&(norm(p.partNo)===n||(nk.length>=5&&key(p.partNo)===nk))))return {kind:"prod",id:p.id};
   const byName=[...S.products.values()].filter(p=>norm(p.name).includes(n));
   if(n.length>=3&&byName.length===1)return {kind:"prod",id:byName[0].id};
   return {kind:"unknown",code:raw};
@@ -1169,6 +1197,11 @@ document.addEventListener("click",async ev=>{
       if(ok&&!S.settings.printSeen&&db){S.settings={...S.settings,printSeen:true};db.doc("settings/main").set(S.settings).catch(()=>{});}
       break;}
     case "unlabeled":unlabeledSheet();break;
+    case "del-mode":S.delSel=S.delSel?null:new Set();render();break;
+    case "del-pick":S.delSel.has(id)?S.delSel.delete(id):S.delSel.add(id);render();break;
+    case "del-one":delAsk([id]);break;
+    case "del-ask":delAsk([...S.delSel]);break;
+    case "del-ok":{el.disabled=true;const n=await deleteProducts(S.delIds||[]);S.delIds=null;S.delSel=null;closeSheet();render();toast(n>1?`${n} ürün silindi`:"Ürün silindi");break;}
     case "mic":startVoice(el.dataset.t,el);break;
     case "web-lookup":webLookupForForm(false);break;
     case "web-name":{const n=$("#pName");if(n){n.value=el.dataset.n;n.classList.add("filled");}if($("#pCat"))$("#pCat").value=el.dataset.c;break;}
@@ -1492,6 +1525,32 @@ async function toggleTorch(){
 const BRANDS=["BOSCH","TRW","FEBI","FEBI BILSTEIN","MANN","MANN-FILTER","MAHLE","KNECHT","VALEO","SACHS","LEMFÖRDER","LEMFORDER","SKF","GATES","CONTINENTAL","CONTITECH","NGK","DENSO","BREMBO","FERODO","TEXTAR","ATE","FILTRON","HENGST","PURFLUX","CASTROL","SHELL","MOTUL","MOBIL","OPET","PETROL OFISI","LIQUI MOLY","ELRING","REINZ","VICTOR REINZ","CORTECO","INA","LUK","DAYCO","MAGNETI MARELLI","HELLA","OSRAM","PHILIPS","VARTA","MUTLU","İNCİ","INCI","YIGIT","YİĞİT","FORD","MOTORCRAFT","RENAULT","FIAT","TOYOTA","VOLKSWAGEN","VW","OPEL","HYUNDAI","MOBIS","KIA","DELPHI","KYB","KAYABA","MONROE","MEYLE","SWAG","TOPRAN","VAICO","VEMO","NISSENS","BEHR","MAPCO","BLUE PRINT","JAPANPARTS","ASHIKA","OPTIMAL","DOLZ","METELLI","AJUSA","PIERBURG","BERU","CHAMPION","EXIDE","TOTAL","ELF","FRENOTEKS","EKU","HİFLEX","SADECE","OE","MOPAR","PEUGEOT","CITROEN","HONDA","NISSAN","MERCEDES","BMW","AUDI","SKODA","SEAT","DACIA"];
 let ocrTarget="pName",ocrItems=[];
 function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector(`script[src="${src}"]`))return res();const t=document.createElement("script");t.src=src;t.onload=res;t.onerror=()=>rej(new Error(src));document.head.appendChild(t);});}
+/* ---------- Türkçe'ye çeviri (telefonun kendi çevirisi; dil paketi bir kez Wi-Fi'de iner) ---------- */
+const TRN=plug("Translation"),TRC=new Map();
+const TR_WORDS=/\b(ve|için|ile|ön|arka|sol|sağ|takım|seti?|fren|balata|filtre(si)?|yağ|hava|yakıt|kayış|uyumlu|fiyat[ıi]?|adet|marka|orijinal|yedek|parça|araç)\b/i;
+function guessLang(t){
+  const s=String(t);
+  if(/[çğışöüÇĞİŞÖÜ]/.test(s)&&!/[äßÄ]/.test(s)&&(/[ğışĞİŞ]/.test(s)||TR_WORDS.test(s)))return "tr";
+  if(TR_WORDS.test(s)&&!/\b(the|and|for|with|front|rear|set|kit)\b/i.test(s))return "tr";
+  if(/[äßÄ]|\b(für|vorne|hinten|vorderachse|hinterachse|satz|und|mit)\b/i.test(s))return "de";
+  if(/\b(avant|arrière|arriere|jeu|pour|frein|plaquettes?)\b/i.test(s))return "fr";
+  return "en";
+}
+const isCodeLike=w=>/\d/.test(w)||(/^[A-Z0-9\-\/.]+$/.test(w)&&w.length<=5);
+async function toTurkish(text){
+  text=String(text||"").trim();if(!text||!TRN)return text;
+  if(!/[A-Za-zÄÖÜäöüß]{3}/.test(text))return text;
+  const lang=guessLang(text);if(lang==="tr")return text;
+  const k=lang+"|"+text;if(TRC.has(k))return TRC.get(k);
+  try{const r=await TRN.translate({text,sourceLanguage:lang,targetLanguage:"tr"});const out=(r&&r.text||text).trim();TRC.set(k,out);return out;}
+  catch(e){console.warn(e);return text;}
+}
+async function toTurkishMany(list){const out=[];for(const t of list)out.push(await toTurkish(t));return out;}
+async function prepareTranslation(){
+  if(!TRN||LOCAL.trReady||!navigator.onLine)return;
+  try{for(const l of ["en","de","tr"])await TRN.downloadModel({language:l});saveLocal({trReady:true});}catch(e){console.warn(e);}
+}
+
 /* ---------- Sesle yazma ---------- */
 const SR=plug("SpeechRecognition"),TR=plug("TextRecognition");
 function micBtn(target){return SR?`<button type="button" class="micbtn" data-act="mic" data-t="${target}" aria-label="Sesle yaz">${IC.mic}</button>`:"";}
@@ -1535,24 +1594,50 @@ async function ocrFromFile(file){
 const PART_BRANDS=BRANDS.filter(b=>!["FORD","RENAULT","FIAT","TOYOTA","VOLKSWAGEN","VW","OPEL","HYUNDAI","KIA","PEUGEOT","CITROEN","HONDA","NISSAN","MERCEDES","BMW","AUDI","SKODA","SEAT","DACIA","OE","SADECE"].includes(b));
 const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
 function findBrand(up,list){let best=null,bi=1e9;for(const b of list){const m=new RegExp("(^|[^A-ZÇĞİÖŞÜ])"+reEsc(b)+"([^A-ZÇĞİÖŞÜ]|$)").exec(up);if(m&&m.index<bi){bi=m.index;best=b;}}return best;}
-const niceBrand=b=>b.length<=4?b:b.split(" ").map(w=>w.charAt(0)+w.slice(1).toLocaleLowerCase("tr")).join(" ");
+const niceBrand=b=>b.length<=4?b:b.split(" ").map(w=>w.split("-").map(x=>x.charAt(0)+x.slice(1).toLocaleLowerCase("tr")).join("-")).join(" ");
+const EAN_BRANDS={"4047023":"Bosch","4047024":"Bosch","3165143":"Bosch","4011558":"Mann-Filter","3322937":"TRW","4027816":"Febi","4054224":"Febi","4009026":"Mahle","7316571":"SKF","0087295":"NGK","3276420":"Valeo","4013872":"Sachs","4030664":"Lemförder","5414465":"Gates","8020584":"Brembo","4019722":"Textar","4006633":"ATE","4030776":"Hengst","5904608":"Filtron","4040074":"Meyle","4044688":"Swag","4008177":"Castrol","4100420":"Liqui Moly","3374650":"Motul","4016987":"Varta"};
+function eanBrand(code){code=String(code||"").replace(/\D/g,"");if(code.length===12)code="0"+code;if(code.length!==13)return null;return EAN_BRANDS[code.slice(0,7)]||null;}
+const PN_RULES=[
+  [/\b(0 ?986 ?\d{3} ?\d{3}|F ?026 ?\d{3} ?\d{3}|0 ?242 ?\d{3} ?\d{3}|1 ?987 ?\d{3} ?\d{3})\b/,"Bosch"],
+  [/\b((?:W|WK|HU|C|CU|CUK|CUK|FP|H|PU|WP)\s?\d{2,4}(?:\/\d{1,2})?(?:\s?[a-z])?)\b/,"Mann-Filter"],
+  [/\b((?:GDB|GS|DF|JTE|JBJ|JTS|JAR|JGS|GCH)\s?\d{3,5}[A-Z]?)\b/,"TRW"],
+  [/\b((?:OC|OX|LX|LA|KL|KX)\s?\d{2,4}(?:\/\d{1,2})?[A-Z]?)\b/,"Mahle"],
+  [/\b((?:VKBA|VKMA|VKMC|VKPC|VKJA|VKDS|VKMV)\s?\d{3,5}[A-Z]?)\b/,"SKF"],
+  [/\b((?:BKR|BPR|BCPR|ZFR|LFR|DCPR|PFR|IFR|ILKAR|BKUR)\d{1,2}[A-Z0-9\-]{0,6})\b/,"NGK"],
+  [/\b(\d{2,3}\s?\d{3}\s?\d{2,3}\s?\d{0,2})\b/,null],
+];
+function findPartNo(text,lines){
+  const T=String(text);
+  for(const l of lines){const m=l.match(/(?:art\.?\s?-?\s?n[or]\.?|ref\.?|part\s?(?:no|number)|teile-?nr\.?|parça\s?no|ürün\s?kodu|oe\s?(?:no|nr)?\.?|item\s?no)\s*[:.#]?\s*([A-Z0-9][A-Z0-9 .\-\/]{3,20}[A-Z0-9])/i);if(m)return m[1].trim();}
+  for(const [re] of PN_RULES.slice(0,-1)){const m=T.match(re);if(m)return m[1].trim();}
+  return null;
+}
 function handleOcrText(text,rawLines){
+  if(S.ocrAcc&&S.ocrAcc.text&&$("#ocrOut .card")){text=S.ocrAcc.text+"\n"+text;rawLines=[...S.ocrAcc.lines,...rawLines];}
+  S.ocrAcc={text,lines:rawLines};
   const lines=rawLines.map(l=>l.replace(/[|_~^`"“”]+/g," ").replace(/\s+/g," ").trim()).filter(l=>l.length>=2&&/[A-Za-zÇĞİÖŞÜçğıöşü0-9]{2}/.test(l));
   const words=[];lines.forEach(l=>l.split(" ").forEach(t=>{t=t.replace(/^[^\wÇĞİÖŞÜçğıöşü]+|[^\wÇĞİÖŞÜçğıöşü.\-/]+$/g,"");if(t.length>=2&&!words.includes(t))words.push(t);}));
   ocrItems=[...new Set([...lines.filter(l=>l.includes(" ")),...words])].slice(0,60);
   const up=text.toLocaleUpperCase("tr");
-  const brand=findBrand(up,PART_BRANDS)||findBrand(up,BRANDS);
+  const bar0=(up.match(/\b\d{13}\b|\b\d{12}\b/)||[])[0];
+  const brand=findBrand(up,PART_BRANDS)||(eanBrand(bar0)||"").toLocaleUpperCase("tr")||findBrand(up,BRANDS)||null;
   if(brand&&$("#pBrand")&&!$("#pBrand").value.trim())$("#pBrand").value=niceBrand(brand);
   const bar=(up.match(/\b\d{13}\b|\b\d{12}\b|\b\d{8}\b/)||[])[0];
   if(bar){const c=$("#pCodes");if(c&&!c.value.includes(bar))c.value=[c.value,bar].filter(Boolean).join(", ");}
-  const part=words.find(t=>/\d/.test(t)&&/[A-Za-z]/.test(t)&&t.length>=5&&t.length<=20&&!/^(EAN|REF|ART|NO)\b/i.test(t))
+  const part=findPartNo(text,lines)||words.find(t=>/\d/.test(t)&&/[A-Za-z]/.test(t)&&t.length>=5&&t.length<=20&&!/^(EAN|REF|ART|NO)\b/i.test(t))
           ||lines.map(l=>(l.match(/\b\d[\d .\-]{5,16}\d\b/)||[])[0]).find(x=>x&&x.replace(/\D/g,"")!==bar);
   if(part&&$("#pPart")&&!$("#pPart").value.trim())$("#pPart").value=part.trim();
   const type=detectType(text);
   if(type&&$("#pName")&&!$("#pName").value.trim())$("#pName").value=type.name;
   if(type&&$("#pCat"))$("#pCat").value=type.cat;
   drawOcr(brand,part,type);
+  translateOcrChips();
   if((part||bar)&&navigator.onLine)webLookupForForm(true);
+}
+async function translateOcrChips(){
+  if(!TRN)return;
+  const idx=ocrItems.map((w,i)=>[w,i]).filter(([w])=>!isCodeLike(w)&&/[A-Za-zÄÖÜäöüß]{3}/.test(w)&&guessLang(w)!=="tr"&&!BRANDS.includes(w.toLocaleUpperCase("tr")));
+  for(const [w,i] of idx){const t=await toTurkish(w);if(t&&t!==w){ocrItems[i]=t;const b=document.querySelector(`[data-act="ocr-word"][data-i="${i}"]`);if(b){b.textContent=t;b.title=w;}}}
 }
 function drawOcr(brand,part,type){
   const out=$("#ocrOut");if(!out)return;
@@ -1563,7 +1648,7 @@ function drawOcr(brand,part,type){
     <div style="font-size:14px">Eksik kalanı doldurmak için önce alanı seç, sonra kelimelere dokun:</div>
     <div class="chips">${T.map(([id,l])=>`<button class="chipbtn" type="button" data-act="ocr-target" data-t="${id}" aria-pressed="${ocrTarget===id}">${l}</button>`).join("")}</div>
     <div class="chips ocrwords">${ocrItems.map((w,i)=>`<button class="chipbtn" type="button" data-act="ocr-word" data-i="${i}">${esc(w)}</button>`).join("")}</div>
-    <button class="btn sm" type="button" data-act="ocr-clear">Seçili alanı temizle</button></div>`;
+    <div class="row"><button class="btn sm" type="button" data-act="ocr-clear">Seçili alanı temizle</button><label class="btn sm" for="ocrCam" role="button" tabindex="0">Kutunun başka yüzünü de oku</label></div></div>`;
 }
 
 /* ---------- İnternette arayıp parçayı tanıma ---------- */
@@ -1670,9 +1755,10 @@ async function webLookup({code,part,name,brand}){
   const pn=(part||"").trim();
   if(pn)qs.push([brand,pn].filter(Boolean).join(" "));
   if(code&&code!==pn)qs.push(code);
+  if(pn)qs.push(pn+" yedek parça");
   if(!qs.length&&name)qs.push(name);
   if(!qs.length)throw new Error("Aranacak kod yok");
-  const jobs=[];qs.slice(0,2).forEach(q=>{jobs.push(searchBing(q).catch(()=>[]));jobs.push(searchDDG(q).catch(()=>[]));});
+  const jobs=[];qs.slice(0,3).forEach((q,i)=>{jobs.push(searchBing(q).catch(()=>[]));if(i<2)jobs.push(searchDDG(q).catch(()=>[]));});
   if(code)jobs.push(lookupUPC(code));
   const all=(await Promise.all(jobs)).flat();
   const seen=new Set(),results=all.filter(r=>{const k=r.url||r.title;if(seen.has(k))return false;seen.add(k);return true;});
@@ -1681,7 +1767,7 @@ async function webLookup({code,part,name,brand}){
   const titles=results.map(r=>r.title).join(" \n ");
   const types=tally(text),up=text.toLocaleUpperCase("tr");
   const bcount=new Map();PART_BRANDS.forEach(b=>{const n=(up.match(new RegExp("(^|[^A-ZÇĞİÖŞÜ])"+reEsc(b)+"([^A-ZÇĞİÖŞÜ]|$)","g"))||[]).length;if(n)bcount.set(b,n);});
-  const upcBrand=results.find(r=>r.brand)?.brand;
+  const upcBrand=results.find(r=>r.brand)?.brand||eanBrand(code);
   const topBrand=upcBrand||[...bcount.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||null;
   const vehicles=vehicleHits(text);
   const conf=types[0]?(types[0].n>=4?"yüksek":types[0].n>=2?"orta":"düşük"):"düşük";
@@ -1698,6 +1784,7 @@ async function webLookupForForm(auto){
     const r=await webLookup({code,part,name,brand});
     if(!$("#webOut"))return;
     S.lastLookup=r;
+    if(TRN){const tt=await toTurkishMany(r.results.map(x=>x.title)),ss=await toTurkishMany(r.results.map(x=>(x.snippet||"").slice(0,160)));r.results.forEach((x,i)=>{x.trTitle=tt[i];x.trSnippet=ss[i];});if(!$("#webOut"))return;}
     if(!r.results.length){out.innerHTML=`<div class="notice warn">İnternette sonuç bulunamadı. Kutudaki parça numarasını yazıp tekrar dene ya da Google'da bak.</div>${googleBtn(part||code)}`;return;}
     const fill=(id,v)=>{const el=$(id);if(el&&v&&!el.value.trim()){el.value=v;el.classList.add("filled");}};
     fill("#pName",r.type&&r.type.name);fill("#pBrand",r.brand);fill("#pVeh",r.vehicles.join(", "));
@@ -1707,11 +1794,12 @@ async function webLookupForForm(auto){
       <div class="notice ${r.confidence==="yüksek"?"ok":r.confidence==="orta"?"info":"warn"}" style="font-size:14px">İnternetten bulunan (güven: <b>${r.confidence}</b>): ${r.type?`<b>${esc(r.type.name)}</b>`:"tür bulunamadı"}${r.brand?` · ${esc(r.brand)}`:""}${r.vehicles.length?` · ${esc(r.vehicles.join(", "))}`:""}. Boş alanlara yazıldı, kontrol et.</div>
       ${r.alts.length?`<div class="chips">${[r.type,...r.alts].filter(Boolean).map(t=>`<button class="chipbtn" type="button" data-act="web-name" data-n="${esc(t.name)}" data-c="${esc(t.cat)}">${esc(t.name)}</button>`).join("")}</div>`:""}
       <details class="more"><summary>Bulunan sonuçlar (${r.results.length})</summary><div class="stack" style="gap:6px">
-        ${r.results.map(x=>`<button class="item" type="button" data-act="web-title" data-n="${esc(x.title.slice(0,80))}" style="padding:8px 0"><div class="grow"><div class="t" style="font-size:14px">${esc(x.title)}</div><div class="s">${esc((x.snippet||"").slice(0,140))}</div></div></button>`).join("")}
+        ${r.results.map(x=>{const t=x.trTitle||x.title,sn=x.trSnippet||x.snippet||"";return `<button class="item" type="button" data-act="web-title" data-n="${esc(cleanTitle(t).slice(0,80))}" style="padding:8px 0"><div class="grow"><div class="t" style="font-size:14px">${esc(t)}</div><div class="s">${esc(sn.slice(0,140))}</div></div></button>`;}).join("")}
         <div class="muted" style="font-size:12px">Bir başlığa dokunursan ürün adı olarak yazılır.</div></div></details>
       ${googleBtn(part||code)}</div>`;
   }catch(e){console.warn(e);out.innerHTML=`<div class="notice warn">Arama yapılamadı (${esc(e.message||e)}).</div>${googleBtn(part||code)}`;}
 }
+function cleanTitle(t){return String(t).split(/\s[|–—-]\s|\s\|\s/)[0].replace(/\b(fiyat[ıi]?|fiyatları|satın al|en uygun)\b.*$/i,"").trim();}
 function googleBtn(q){return q?`<button class="btn sm" type="button" data-act="open-url" data-url="${esc("https://www.google.com/search?q="+encodeURIComponent(q))}">Google'da aç: ${esc(q)}</button>`:"";}
 
 /* ---------- Bu telefona özel ayarlar (yazıcı vb.) ---------- */
@@ -1902,6 +1990,7 @@ render();
   S.loading=true;
   if(!db.fire){try{await Promise.race([loadDB(),new Promise(r=>setTimeout(r,5000))]);}catch(e){logErr("Kayıtlar okunamadı: "+(e&&e.message||e));}}
   S.loading=false;S.loadedOnce=true;S.ready=true;render();
+  setTimeout(prepareTranslation,4000);window.addEventListener("online",()=>setTimeout(prepareTranslation,2000));
   document.addEventListener("visibilitychange",()=>{if(document.hidden){persist();closeScanner();}});
   if(APP){
     try{
