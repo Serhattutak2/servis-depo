@@ -1891,7 +1891,7 @@ async function identify({code,part,name,brand}){
   const hit=catalogHit(code,part);
   if(hit)return {fromCatalog:true,pct:100,name:hit.name,brand:hit.brand,partNo:hit.partNo||part,vehicles:hit.vehicle?[hit.vehicle]:[],unit:hit.unit,oe:[],results:[],sources:0};
   const pn=(part||"").trim(),qs=[];
-  if(pn)qs.push([brand,pn].filter(Boolean).join(" "));
+  if(pn)qs.push(pn); // önce sadece seri no ile (marka yazmadan)
   if(code&&keyOf(code)!==keyOf(pn))qs.push(code);
   if(pn)qs.push(pn+" yedek parça");
   if(!qs.length&&name)qs.push(name);
