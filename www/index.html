@@ -9,6 +9,7 @@
 <script src="vendor/native.js"></script>
 <script src="vendor/build.js"></script>
 <script src="firebase-config.js"></script>
+<script src="ai-config.js"></script>
 <script defer src="vendor/jsQR.js"></script>
 <script defer src="vendor/zxing.min.js"></script>
 <script defer src="vendor/qrcode.js"></script>
@@ -187,6 +188,7 @@ html.native-scan #scanVideo{display:none}
 .rowitem>.item{border-top:0;flex:1;min-width:0}
 .delbtn{color:var(--bad);margin-right:6px;flex:none}
 .item.picked{background:var(--bad-soft)}
+.spin{width:20px;height:20px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .9s linear infinite;flex:none}@keyframes sp{to{transform:rotate(360deg)}}
 .idcard.ok{border-color:var(--ok)}.idcard.warn{border-color:var(--warn)}
 .withmic{display:flex;gap:6px;align-items:stretch}
 .withmic>input,.withmic>textarea{flex:1;min-width:0}
@@ -732,6 +734,7 @@ function vAyar(){
       <label class="f">İşletme telefonu <input id="shPhone" inputmode="tel" value="${esc(st.shopPhone||"")}"></label>
       <label class="f">Mesaj altı (adres, IBAN…) <textarea id="shFooter">${esc(st.shopFooter||"")}</textarea></label>
       <label class="f">Tedarikçi WhatsApp (sipariş listesi için) <input id="shSup" inputmode="tel" value="${esc(st.supplierPhone||"")}"></label>
+      <label class="f">Yapay zekâ anahtarı (Google AI Studio) <input id="shAi" class="mono" value="${esc(st.geminiKey||"")}" placeholder="${window.GEMINI_KEY?"Uygulamadaki anahtar kullanılıyor":"Anahtarı yapıştır"}" autocomplete="off"></label>
       <label class="f">Etiket boyutu (yazıcıdaki rulo) <select id="shLabel">${Object.keys(LABEL_SIZES).map(k=>`<option value="${k}" ${(st.labelSize||"50x30")===k?"selected":""}>${k.replace("x","×")} mm${k==="50x30"?" (önerilen)":""}</option>`).join("")}</select></label>
       <button class="btn pri">Kaydet</button></form>
     <div class="card stack"><h3>Etiket yazıcısı</h3>
@@ -780,7 +783,7 @@ function prodSheet(id){
 }
 function prodForm(p,opts={}){
   p=p||{};const isNew=!p.id;
-  if(isNew&&opts.code)setTimeout(()=>webLookupForForm(true),60);
+  if(isNew&&opts.code)setTimeout(async()=>{if(!(await aiLookupForForm(null)))webLookupForForm(true);},60);
   const codes=[...(p.codes||[]),...(opts.code&&!(p.codes||[]).includes(opts.code)?[opts.code]:[])];
   openSheet(`${sheetHd(isNew?"Yeni ürün":"Ürünü düzenle")}
   ${isNew&&opts.code?`<div class="notice info">Bu kod kayıtlı değil: <b class="mono">${esc(opts.code)}</b></div>`:""}
@@ -1206,7 +1209,8 @@ document.addEventListener("click",async ev=>{
     case "del-ask":delAsk([...S.delSel]);break;
     case "del-ok":{el.disabled=true;const n=await deleteProducts(S.delIds||[]);S.delIds=null;S.delSel=null;closeSheet();render();toast(n>1?`${n} ürün silindi`:"Ürün silindi");break;}
     case "mic":startVoice(el.dataset.t,el);break;
-    case "web-lookup":webLookupForForm(false);break;
+    case "web-lookup":if(!(await aiLookupForForm(null)))webLookupForForm(false);break;
+    case "ai-again":aiLookupForForm(null);break;
     case "web-name":{const n=$("#pName");if(n){n.value=el.dataset.n;n.dataset.user="1";}if($("#pCat"))$("#pCat").value=el.dataset.c;break;}
     case "web-title":{const n=$("#pName");if(n){n.value=el.dataset.n;n.dataset.user="1";n.scrollIntoView({block:"center"});}break;}
     case "sync-start":el.disabled=true;await syncStart();el.disabled=false;break;
@@ -1282,7 +1286,7 @@ document.addEventListener("submit",async ev=>{
   else if(k==="wotask"){const v=$("#woTaskIn").value.trim();if(!v)return;readWo();addTask(v);woRefresh();$("#woTaskIn").value="";}
   else if(k==="wopart"){const n=$("#mpName").value.trim();if(!n)return;readWo();wo.parts.push({name:n,qty:Math.max(1,parseInt($("#mpQty").value)||1),price:parseMoney($("#mpPrice").value),manual:true});woRefresh();["#mpName","#mpPrice"].forEach(x=>$(x).value="");$("#mpQty").value="1";}
   else if(k==="syncjoin"){const v=$("#syncCode").value.trim();if(v)syncJoinAsk(v);}
-  else if(k==="shop"){if(!db)return;const ns={...S.settings,shopName:$("#shName").value.trim(),shopPhone:$("#shPhone").value.trim(),shopFooter:$("#shFooter").value.trim(),supplierPhone:$("#shSup").value.trim(),printDensity:+($("#prDensity")?.value||S.settings.printDensity||3),labelSize:$("#shLabel").value};try{await db.doc("settings/main").set(ns);S.settings=ns;toast("Kaydedildi");}catch(e){fail(e,"Ayarlar");}}
+  else if(k==="shop"){if(!db)return;const ns={...S.settings,shopName:$("#shName").value.trim(),shopPhone:$("#shPhone").value.trim(),shopFooter:$("#shFooter").value.trim(),supplierPhone:$("#shSup").value.trim(),geminiKey:($("#shAi")?.value||"").trim(),printDensity:+($("#prDensity")?.value||S.settings.printDensity||3),labelSize:$("#shLabel").value};try{await db.doc("settings/main").set(ns);S.settings=ns;toast("Kaydedildi");}catch(e){fail(e,"Ayarlar");}}
   else if(k==="staff"){const name=$("#stName").value.trim();if(!name||!db)return;try{await db.collection("staff").add({name,role:$("#stRole").value.trim(),phone:$("#stPhone").value.trim(),createdAt:Date.now()});toast("Eklendi");}catch(e){fail(e,"Personel");}}
   else if(k==="shelfgen")await genShelves();
   else if(k==="shelfone"){const c=shelfCode($("#sgOne").value);if(!c||!db)return;try{await db.doc("shelves/"+c).set({code:c,createdAt:Date.now()});toast(c+" eklendi");}catch(e){fail(e,"Raf");}}
@@ -1605,6 +1609,7 @@ async function startVoice(target,btn){
 
 /* ---------- Kutudan yazı okuma (telefonun kendi yazı tanıması, internetsiz) ---------- */
 async function ocrFromFile(file){
+  S.aiPending=navigator.onLine?aiLookupForForm(file):Promise.resolve(false);
   const out=$("#ocrOut");if(out)out.innerHTML=`<div class="notice info">Yazılar okunuyor…</div>`;
   try{
     let text="",lines=[];
@@ -1661,7 +1666,7 @@ function handleOcrText(text,rawLines){
   if(type&&$("#pCat"))$("#pCat").value=type.cat;
   drawOcr(brand,part,type);
   translateOcrChips();
-  if(part||bar||$("#pCodes")?.value.trim())webLookupForForm(true);
+  (S.aiPending||Promise.resolve(false)).then(ok=>{if(!ok&&(part||bar||$("#pCodes")?.value.trim()))webLookupForForm(true);});
 }
 async function translateOcrChips(){
   if(!TRN)return;
@@ -1938,6 +1943,91 @@ function idCardHtml(r){
     ${r.vehicles.length?`<div style="font-size:14px"><div class="muted">Uyumlu araçlar:</div><ul style="margin:4px 0 0;padding-left:20px">${r.vehicles.map(v=>`<li>${esc(v)}</li>`).join("")}</ul></div>`:""}
     ${r.oe&&r.oe.length?`<div style="font-size:14px"><span class="muted">OE no:</span> <span class="mono">${esc(r.oe.join(", "))}</span></div>`:""}
     <div class="muted" style="font-size:12px">${r.fromCatalog?"Bu kod daha önce kaydedilmiş; bilgiler oradan geldi.":r.sources?`Kodu birebir geçen ${r.sources} kaynak bulundu, ${r.pages||0} ürün sayfası okundu.`:"Kodu birebir geçen kaynak bulunamadı, tahmin zayıf."} Yanlışsa alanı düzelt.</div></div>`;
+}
+
+/* ---------- Yapay zekâ (Google Gemini) + Google araması ---------- */
+const GEMINI_MODEL="gemini-2.5-flash";
+const aiKey=()=>(S.settings.geminiKey||window.GEMINI_KEY||"").trim();
+async function httpPostJson(url,body,headers){
+  if(window.CapHttp&&isNative){const r=await window.CapHttp.post({url,headers:{"Content-Type":"application/json",...headers},data:body,connectTimeout:15000,readTimeout:90000});return {status:r.status,data:typeof r.data==="string"?JSON.parse(r.data||"{}"):r.data};}
+  if(window.__aiStub)return window.__aiStub(url,body);
+  const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json",...headers},body:JSON.stringify(body)});return {status:r.status,data:await r.json().catch(()=>({}))};
+}
+async function imgToB64(file){
+  const img=await loadImg(file);if(!img)throw new Error("Fotoğraf açılamadı");
+  const c=toCanvas(img,1600,1,0);return c.toDataURL("image/jpeg",0.85).split(",")[1];
+}
+const AI_PROMPT=(serial,code,hint)=>`Sen Türkiye'de çalışan deneyimli bir oto yedek parça uzmanısın. Bir servis deposuna gelen parçayı tanıyorsun.
+${serial||code?`Bilinen kodlar: ${[serial&&`parça/seri no "${serial}"`,code&&`barkod "${code}"`].filter(Boolean).join(", ")}.`:""}
+${hint?`Telefonun okuduğu yazılar (hatalı olabilir): ${hint.slice(0,600)}`:""}
+Adımlar:
+1. Fotoğraf varsa kutudaki üretici parça/seri numarasını harfi harfine oku (0/O, 1/I, 5/S, 8/B karıştırma), barkodu ve markayı oku.
+2. Google'da SADECE seri numarasıyla ara (marka yazmadan, tırnak içinde). Ayrıca "<seri no> uyumlu araçlar" ve "<seri no> compatible vehicles" diye ara. Barkod varsa barkodu da ara.
+3. Arama sonuçlarından parçanın ne olduğunu, markasını ve bu parça numarasının UYDUĞU ARAÇLARI topla (yedek parça kataloğu, Autodoc, Trendyol, Hepsiburada, üretici sitesi). Araç listesini mümkün olduğunca tam ver: marka, model, kasa kodu, yıl aralığı, motor.
+4. Parçanın adını Türkçe servis diliyle yaz (wheel bearing = teker rulmanı, brake pad = fren balatası, control arm = salıncak, tie rod end = rot başı, shock absorber = amortisör; ön/arka belirt). Araç adlarını doğru yaz (Fluence, Megane, Egea, Focus...).
+5. Sadece kaynaklarda gördüğün bilgiyi yaz, uydurma. Bulamadığını "emin_degil" alanına yaz.
+Cevabın SADECE şu JSON olsun, başka hiçbir şey yazma (metinler Türkçe):
+{"parca_adi":"","marka":"","parca_no":"","barkod":"","tanim":"2 cümle: ne olduğu, nereye takıldığı","uyumlu_araclar":[{"marka":"","model":"","kasa":"","yil":"","motor":""}],"oe_numaralari":[],"guven":0,"emin_degil":""}`;
+function parseAiJson(t){
+  t=String(t||"").replace(/```json|```/g,"").trim();const a=t.indexOf("{"),b=t.lastIndexOf("}");
+  if(a<0||b<a)throw new Error("Cevap okunamadı");return JSON.parse(t.slice(a,b+1));
+}
+async function geminiIdentify({file,serial,code,hint}){
+  const key=aiKey();if(!key)throw new Error("Yapay zekâ anahtarı yok");
+  const parts=[{text:AI_PROMPT(serial,code,hint)}];
+  if(file)parts.push({inline_data:{mime_type:"image/jpeg",data:await imgToB64(file)}});
+  const url=`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const body={contents:[{role:"user",parts}],tools:[{google_search:{}}],generationConfig:{temperature:0.1}};
+  const r=await httpPostJson(url,body,{"x-goog-api-key":key});
+  if(r.status>=400){const m=(r.data&&r.data.error&&r.data.error.message)||("HTTP "+r.status);throw new Error(r.status===400&&/key/i.test(m)?"Anahtar geçersiz":r.status===429?"Günlük ücretsiz limit doldu, yarın tekrar dene":m);}
+  const cand=(r.data.candidates||[])[0]||{};
+  const text=(cand.content&&cand.content.parts||[]).map(p=>p.text||"").join("");
+  const j=parseAiJson(text);
+  const gm=cand.groundingMetadata||{};
+  j.sources=(gm.groundingChunks||[]).map(c=>c.web).filter(Boolean).map(w=>({title:w.title||"",url:w.uri||""})).slice(0,8);
+  j.searches=gm.webSearchQueries||[];
+  return j;
+}
+function aiCarText(c){return [c.marka,c.model,c.kasa,c.yil&&`(${c.yil})`,c.motor].filter(Boolean).join(" ");}
+function aiCardHtml(j){
+  const g=Math.max(0,Math.min(100,+j.guven||0)),lvl=g>=75?"ok":g>=50?"info":"warn";
+  const cars=(j.uyumlu_araclar||[]).filter(c=>c&&(c.model||c.marka));
+  return `<div class="card stack idcard ${lvl}" style="gap:8px">
+    <div class="row"><b class="grow" style="font-size:18px">${esc(j.parca_adi||"Parça tanınamadı")}</b><span class="pill ${g>=75?"ok":g>=50?"neu":"warn"}">Yapay zekâ · %${g}</span></div>
+    ${j.marka||j.parca_no?`<div>${j.marka?`<b>${esc(j.marka)}</b>`:""}${j.parca_no?` · <span class="mono">${esc(j.parca_no)}</span>`:""}</div>`:""}
+    ${j.tanim?`<div style="font-size:14px">${esc(j.tanim)}</div>`:""}
+    ${cars.length?`<div style="font-size:14px"><div class="muted">Uyumlu araçlar (${cars.length}):</div><ul style="margin:4px 0 0;padding-left:20px">${cars.slice(0,25).map(c=>`<li>${esc(aiCarText(c))}</li>`).join("")}</ul></div>`:`<div class="notice warn" style="font-size:14px">Uyumlu araç bulunamadı.</div>`}
+    ${(j.oe_numaralari||[]).length?`<div style="font-size:14px"><span class="muted">OE no:</span> <span class="mono">${esc(j.oe_numaralari.join(", "))}</span></div>`:""}
+    ${j.emin_degil?`<div class="notice warn" style="font-size:13px">${esc(j.emin_degil)}</div>`:""}
+    ${j.sources&&j.sources.length?`<details class="more"><summary>Google kaynakları (${j.sources.length})</summary><div class="stack" style="gap:4px">${j.sources.map(s=>`<button class="item" type="button" data-act="open-url" data-url="${esc(s.url)}" style="padding:6px 0"><span class="grow" style="font-size:14px">${esc(s.title||s.url)}</span></button>`).join("")}</div></details>`:""}
+    <div class="muted" style="font-size:12px">Fotoğraf ve Google araması yapay zekâyla birleştirildi. Yanlışsa alanı düzelt.</div></div>`;
+}
+async function aiLookupForForm(file){
+  const out=$("#webOut");if(!out||!navigator.onLine)return false;
+  if(!aiKey()){out.innerHTML=`<div class="notice warn">Yapay zekâ için anahtar girilmemiş. <b>Ayarlar › İşletme › Yapay zekâ anahtarı</b> alanına anahtarı yapıştır. Şimdilik normal internet araması yapılıyor.</div>`;return false;}
+  const code=($("#pCodes")?.value||"").split(",").map(s=>s.trim()).filter(Boolean)[0]||"";
+  const serial=$("#pPart")?.value.trim()||"";
+  if(!file&&!serial&&!code)return false;
+  const myRun=(S.idRun=(S.idRun||0)+1);
+  out.innerHTML=`<div class="notice info"><div class="row"><span class="spin" aria-hidden="true"></span><span>Yapay zekâ kutuyu okuyor ve Google'da arıyor… (10-30 sn)</span></div></div>`;
+  try{
+    const j=await geminiIdentify({file,serial,code,hint:(S.ocrAcc&&S.ocrAcc.text)||""});
+    if(!$("#webOut")||myRun!==S.idRun)return true;
+    S.lastAi=j;
+    const cars=(j.uyumlu_araclar||[]).filter(c=>c&&(c.model||c.marka));
+    autoFill("#pName",j.parca_adi);autoFill("#pBrand",j.marka);autoFill("#pPart",j.parca_no);
+    autoFill("#pVeh",cars.map(aiCarText).join(", "));
+    const note=[j.tanim,(j.oe_numaralari||[]).length?"OE: "+j.oe_numaralari.join(", "):""].filter(Boolean).join("\n");
+    autoFill("#pNotes",note);
+    if(j.barkod)addCode(j.barkod);
+    const t=detectType(j.parca_adi||"");if(t&&$("#pCat"))$("#pCat").value=t.cat;
+    out.innerHTML=aiCardHtml(j)+`<div class="row"><button class="btn sm" type="button" data-act="ai-again">Yapay zekâyla tekrar ara</button>${googleBtn(j.parca_no||serial||code)}</div>`;
+    return true;
+  }catch(e){
+    console.warn(e);if(!$("#webOut")||myRun!==S.idRun)return true;
+    out.innerHTML=`<div class="notice warn">Yapay zekâ cevap veremedi: ${esc(e.message||e)}. Normal internet aramasına geçiliyor…</div>`;
+    return false;
+  }
 }
 
 async function webLookupForForm(auto){
