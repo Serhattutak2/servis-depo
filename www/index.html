@@ -187,6 +187,7 @@ html.native-scan #scanVideo{display:none}
 .rowitem>.item{border-top:0;flex:1;min-width:0}
 .delbtn{color:var(--bad);margin-right:6px;flex:none}
 .item.picked{background:var(--bad-soft)}
+.idcard.ok{border-color:var(--ok)}.idcard.warn{border-color:var(--warn)}
 .withmic{display:flex;gap:6px;align-items:stretch}
 .withmic>input,.withmic>textarea{flex:1;min-width:0}
 .micbtn{flex:none;width:48px;border:1.5px solid var(--line);background:var(--surface);color:var(--accent);border-radius:10px;display:grid;place-items:center;cursor:pointer}
@@ -251,7 +252,7 @@ const IC={
   trash:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>`,
   check:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg>`,
 };
-const S={products:new Map(),vehicles:new Map(),shelves:new Map(),orders:new Map(),staff:new Map(),moves:[],settings:{},
+const S={products:new Map(),vehicles:new Map(),catalog:new Map(),shelves:new Map(),orders:new Map(),staff:new Map(),moves:[],settings:{},
   view:"home",task:null,q:"",woFilter:"aktif",sub:"raflar",month:new Date().toISOString().slice(0,7),
   lastPhoto:null,last:null,ready:false,offline:false};
 let db=null,dl=null,ai=null,sheetOpen=false,wo=null;
@@ -260,7 +261,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const qtyOf=p=>Object.values(p?.locs||{}).reduce((a,b)=>a+(+b>0?+b:0),0);
 const locsOf=p=>Object.entries(p?.locs||{}).filter(([,v])=>+v>0).sort((a,b)=>a[0].localeCompare(b[0],"tr",{numeric:true}));
-const stat=p=>{const q=qtyOf(p),m=+p.min||0;return q<=0?["bad","Bitti"]:(m&&q<=m?["warn","Azaldı"]:["ok","Var"]);};
+const stat=p=>{const q=qtyOf(p);return q<=0?["bad","Bitti"]:(q<=1?["warn","Son 1"]:["ok","Var"]);};
 const unitOf=p=>p?.unit||"adet";
 const fmtDate=ts=>new Date(ts).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
 const monthName=ym=>new Date(ym+"-01T00:00").toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
@@ -287,23 +288,26 @@ function offlineNote(){return S.offline?`<div class="notice bad">Kayıtlar telef
 
 /* ================= DEPO (home) ================= */
 function vHome(){
+  return `${offlineNote()}<section class="stack">${homeSearch()}</section><div id="homeBody" class="stack" style="gap:18px">${homeBody()}</div>`;
+}
+function homeSearch(){return `<div class="withmic"><input id="q" class="huge" type="search" placeholder="Ne arıyorsun? ör. ford balata" value="${esc(S.q)}" data-in="q" autocomplete="off" enterkeyhint="search" aria-label="Malzeme ara">${micBtn("q")}</div>`;}
+function homeBody(){
   const q=norm(S.q);
   const search=`<div class="withmic"><input id="q" class="huge" type="search" placeholder="Ne arıyorsun? ör. ford balata" value="${esc(S.q)}" data-in="q" autocomplete="off" enterkeyhint="search" aria-label="Malzeme ara">${micBtn("q")}</div>`;
   if(q){
     const words=q.split(" ");
     const res=[...S.products.values()].filter(p=>{const h=norm([p.name,p.brand,p.partNo,p.vehicle,p.category,(p.codes||[]).join(" ")].join(" "));return words.every(w=>h.includes(w));})
       .sort((a,b)=>qtyOf(b)-qtyOf(a)).slice(0,30);
-    return `${offlineNote()}<section class="stack">${search}
+    return `<section class="stack">
       ${res.length?`<div class="list">${res.map(findItem).join("")}</div>`:`<div class="card empty">“${esc(S.q)}” depoda kayıtlı değil.<div class="row" style="justify-content:center;margin-top:10px"><button class="btn sm" data-act="prod-new">Yeni ürün kartı aç</button></div></div>`}
     </section>`;
   }
   const prods=[...S.products.values()];
-  const low=prods.filter(p=>stat(p)[0]!=="ok"&&(+p.min||0)>0);
+  const low=prods.filter(p=>stat(p)[0]!=="ok");
   const td=S.moves.filter(m=>sameDay(m.ts));
   const inQ=td.filter(m=>m.type==="in").reduce((a,m)=>a+m.qty,0),outQ=td.filter(m=>m.type==="out").reduce((a,m)=>a+m.qty,0);
   const open=[...S.orders.values()].filter(o=>o.status!=="tamam").sort((a,b)=>b.createdAt-a.createdAt);
-  return `${offlineNote()}
-  <section class="stack">${search}</section>
+  return `
   <section class="tiles">
     <button class="tile pri" data-act="task" data-k="in">${IC.in}<div><b>Malzeme geldi</b><br><span>Kutuyu okut, rafa koy</span></div></button>
     <button class="tile" data-act="task" data-k="out">${IC.out}<div><b>Malzeme al</b><br><span>Rafı okut, ürünü al</span></div></button>
@@ -765,13 +769,13 @@ function prodSheet(id){
   <div class="card stack">
     <div class="row"><span class="qty ${k==="ok"?"":k}" style="text-align:left;font-size:40px">${qtyOf(p)}</span><span class="muted">${esc(unitOf(p))}</span><span class="pill ${k}">${lbl}</span></div>
     <div style="font-size:17px">${l.length?`Yeri: ${l.map(([s,v])=>`<span class="tag" style="font-size:16px">${esc(s)}</span> ${v}`).join(" &nbsp; ")}`:`<span class="muted">Rafta yok</span>`}</div>
-    <div class="muted">${esc([p.brand,p.partNo,p.vehicle].filter(Boolean).join(" · "))}${+p.price?` · ${money(p.price)} + KDV`:""}</div>
+    <div class="muted">${esc([p.brand,p.partNo,p.vehicle].filter(Boolean).join(" · "))}</div>
   </div>
   <div class="grid2"><button class="btn pri big" data-act="start-in" data-id="${esc(id)}">Geldi</button><button class="btn big" data-act="start-out" data-id="${esc(id)}" ${l.length?"":"disabled"}>Al</button></div>
   <div class="row"><button class="btn sm" data-act="label" data-id="${esc(id)}">Etiket bas</button><button class="btn sm" data-act="prod-edit" data-id="${esc(id)}">Düzenle</button><span class="spacer"></span><button class="btn sm danger" data-act="del-one" data-id="${esc(id)}">${IC.trash}Sil</button></div>
   ${mv.length?`<div class="stack" style="gap:6px"><div class="eyebrow">Son hareketler</div><div class="list">${mv.map(moveItem).join("")}</div></div>`:""}
   <details class="more"><summary>Diğer bilgiler</summary><div class="stack" style="gap:4px;font-size:15px">
-    ${[["Kategori",p.category],["Barkodlar",(p.codes||[]).join(", ")],["Min. stok",p.min],["Not",p.notes]].filter(r=>r[1]).map(([a,b])=>`<div><span class="muted">${a}:</span> ${esc(b)}</div>`).join("")}
+    ${[["Barkodlar",(p.codes||[]).join(", ")],["Not",p.notes]].filter(r=>r[1]).map(([a,b])=>`<div><span class="muted">${a}:</span> ${esc(b)}</div>`).join("")}
     <button class="btn sm danger" data-act="prod-del" data-id="${esc(id)}" style="justify-self:start;margin-top:8px">Ürün kartını sil</button></div></details>`);
 }
 function prodForm(p,opts={}){
@@ -780,19 +784,18 @@ function prodForm(p,opts={}){
   const codes=[...(p.codes||[]),...(opts.code&&!(p.codes||[]).includes(opts.code)?[opts.code]:[])];
   openSheet(`${sheetHd(isNew?"Yeni ürün":"Ürünü düzenle")}
   ${isNew&&opts.code?`<div class="notice info">Bu kod kayıtlı değil: <b class="mono">${esc(opts.code)}</b></div>`:""}
-  <div class="grid2"><label class="btn pri" for="ocrCam" role="button" tabindex="0">${IC.cam}Kutunun yazılarını oku</label><button class="btn" type="button" data-act="web-lookup">${IC.globe}İnternette tanı</button></div>
-  <div id="ocrOut"></div><div id="webOut"></div>
+  <label class="btn pri big" for="ocrCam" role="button" tabindex="0">${IC.cam}Kutuyu tanı · fotoğraf çek</label>
+  <div class="muted" style="font-size:13px;text-align:center;margin-top:-6px">Barkod, marka, parça no ve yazılar okunur; internetten uyumlu araçlar bulunur. Hepsi otomatik yazılır, yanlışsa düzelt.</div>
+  <div id="webOut"><button class="btn sm" type="button" data-act="web-lookup" style="justify-self:center">${IC.globe}Barkod / parça no yazdım, internette ara</button></div><div id="ocrOut"></div>
   <form class="stack" data-form="prod" data-id="${esc(p.id||"")}">
-    <label class="f">Ürün adı * <div class="withmic"><input id="pName" required value="${esc(p.name)}" placeholder="Ön fren balatası">${micBtn("pName")}</div></label>
-    <div class="grid2"><label class="f">Marka <input id="pBrand" value="${esc(p.brand)}" placeholder="Ford, Bosch…"></label><label class="f">Parça no <input id="pPart" class="mono" value="${esc(p.partNo)}"></label>
-    <label class="f">Satış fiyatı (KDV hariç) <input id="pPrice" inputmode="decimal" value="${priceVal(p.price)}" placeholder="₺"></label></div>
-    <details class="more" ${isNew?"":"open"}><summary>Daha fazla bilgi (isteğe bağlı)</summary><div class="stack">
-      <div class="grid2"><label class="f">Uyumlu araç <input id="pVeh" value="${esc(p.vehicle)}" placeholder="Focus 2011–2018"></label>
-      <label class="f">Kategori <select id="pCat">${CATS.map(c=>`<option ${p.category===c?"selected":""}>${esc(c)}</option>`).join("")}</select></label>
-      <label class="f">Birim <select id="pUnit">${UNITS.map(u=>`<option ${unitOf(p)===u?"selected":""}>${u}</option>`).join("")}</select></label>
-      <label class="f">Şu sayının altına düşünce uyar <input id="pMin" inputmode="numeric" value="${esc(p.min||"")}" placeholder="ör. 2"></label></div>
-      <label class="f">Barkodlar (virgülle) <input id="pCodes" class="mono" value="${esc(codes.join(", "))}"></label>
-      <label class="f">Not <div class="withmic"><textarea id="pNotes">${esc(p.notes)}</textarea>${micBtn("pNotes")}</div></label></div></details>
+    <label class="f">Ürün adı * <div class="withmic"><input id="pName" required value="${esc(p.name)}" placeholder="Ön fren balatası"${!isNew&&p.name?' data-user="1"':""}>${micBtn("pName")}</div></label>
+    <div class="grid2"><label class="f">Marka <input id="pBrand" value="${esc(p.brand)}" placeholder="Bosch, TRW…"${!isNew&&p.brand?' data-user="1"':""}></label><label class="f">Parça no / seri no <input id="pPart" class="mono" value="${esc(p.partNo)}"${!isNew&&p.partNo?' data-user="1"':""}></label></div>
+    <label class="f">Uyumlu araçlar <div class="withmic"><textarea id="pVeh" rows="2" placeholder="Ford Focus II (2004–2011), C-Max"${!isNew&&p.vehicle?' data-user="1"':""}>${esc(p.vehicle)}</textarea>${micBtn("pVeh")}</div></label>
+    <div class="grid2"><label class="f">Birim <select id="pUnit">${UNITS.map(u=>`<option ${unitOf(p)===u?"selected":""}>${u}</option>`).join("")}</select></label>
+    <label class="f">Barkodlar <input id="pCodes" class="mono" value="${esc(codes.join(", "))}"></label></div>
+    <label class="f">Not <div class="withmic"><textarea id="pNotes" rows="2"${!isNew&&p.notes?' data-user="1"':""}>${esc(p.notes)}</textarea>${micBtn("pNotes")}</div></label>
+    <input type="hidden" id="pCat" value="${esc(p.category||"")}">
+    <div class="muted" style="font-size:13px">Depoda 1 tane kalınca otomatik uyarır.</div>
     <button class="btn ${isNew?"okb":"pri"} big">${isNew?"Tamam · kaydet":"Kaydet"}</button>
   </form>
   ${ai&&!isNew?`<button class="btn sm" type="button" data-act="ai-text">Parça no'dan bilgileri tamamla</button><div id="aiOut" class="muted" style="font-size:14px"></div>`:""}`);
@@ -1125,7 +1128,7 @@ async function commitOut(){
     const ref=await addMove({pid:p.id,name:p.name,type:"out",qty:t.qty,shelf:t.shelf,orderId:o?.id||"",plate:o?.plate||""});
     if(o)await db.doc("orders/"+o.id).update({parts:[...(o.parts||[]),{pid:p.id,name:p.name,qty:t.qty,shelf:t.shelf,price:+p.price||0}]});
     S.last={pid:p.id,shelf:t.shelf,before,delta:-t.qty,moveId:ref.id,orderId:o?.id};
-    const left=before-t.qty,m=+p.min||0;
+    const left=before-t.qty,m=1;
     t.done={msg:`${t.qty} ${unitOf(p)} ${p.name} alındı`,sub:`${o?o.plate+" için · ":""}${t.shelf} rafında ${left} kaldı${m&&left<=m?" · sipariş zamanı":""}`};render();
   }catch(e){fail(e,"Çıkış");}
 }
@@ -1169,7 +1172,7 @@ document.addEventListener("click",async ev=>{
     case "scan-close":closeScanner();break;
     case "torch":toggleTorch();break;
     case "ocr-target":ocrTarget=el.dataset.t;document.querySelectorAll('[data-act="ocr-target"]').forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===ocrTarget)));break;
-    case "ocr-word":{const f=document.getElementById(ocrTarget),w=ocrItems[+el.dataset.i];if(f&&w){f.value=(f.value.trim()+" "+w).trim();el.setAttribute("aria-pressed","true");}if(ocrTarget==="pNotes"||ocrTarget==="pPart"){const d=f&&f.closest("details");if(d)d.open=true;}break;}
+    case "ocr-word":{const f=document.getElementById(ocrTarget),w=ocrItems[+el.dataset.i];if(f&&w){f.dataset.user="1";f.value=(f.value.trim()+" "+w).trim();el.setAttribute("aria-pressed","true");}if(ocrTarget==="pNotes"||ocrTarget==="pPart"){const d=f&&f.closest("details");if(d)d.open=true;}break;}
     case "ocr-clear":{const f=document.getElementById(ocrTarget);if(f)f.value="";document.querySelectorAll('[data-act="ocr-word"]').forEach(b=>b.setAttribute("aria-pressed","false"));break;}
     case "backup":exportBackup();break;
     case "restore-ok":await db._load(S.pendingRestore);S.pendingRestore=null;await persist();closeSheet();S.view="home";render();toast("Yedek yüklendi");break;
@@ -1204,8 +1207,8 @@ document.addEventListener("click",async ev=>{
     case "del-ok":{el.disabled=true;const n=await deleteProducts(S.delIds||[]);S.delIds=null;S.delSel=null;closeSheet();render();toast(n>1?`${n} ürün silindi`:"Ürün silindi");break;}
     case "mic":startVoice(el.dataset.t,el);break;
     case "web-lookup":webLookupForForm(false);break;
-    case "web-name":{const n=$("#pName");if(n){n.value=el.dataset.n;n.classList.add("filled");}if($("#pCat"))$("#pCat").value=el.dataset.c;break;}
-    case "web-title":{const n=$("#pName");if(n){n.value=el.dataset.n;n.classList.add("filled");n.scrollIntoView({block:"center"});}break;}
+    case "web-name":{const n=$("#pName");if(n){n.value=el.dataset.n;n.dataset.user="1";}if($("#pCat"))$("#pCat").value=el.dataset.c;break;}
+    case "web-title":{const n=$("#pName");if(n){n.value=el.dataset.n;n.dataset.user="1";n.scrollIntoView({block:"center"});}break;}
     case "sync-start":el.disabled=true;await syncStart();el.disabled=false;break;
     case "sync-join":S.scanCb=v=>syncJoinAsk(v);openScanner();break;
     case "sync-join-ok":await syncJoin();break;
@@ -1254,10 +1257,12 @@ document.addEventListener("click",async ev=>{
     case "picked-shelf":closeSheet();handleCode("MD:R:"+el.dataset.c);break;
   }
 });
+document.addEventListener("compositionstart",()=>{S.composing=true;});
+document.addEventListener("compositionend",ev=>{S.composing=false;if(ev.target&&ev.target.id==="q")ev.target.dispatchEvent(new Event("input",{bubbles:true}));});
 document.addEventListener("keydown",ev=>{const l=ev.target.closest?.("label.btn[for]");if(l&&(ev.key==="Enter"||ev.key===" ")){ev.preventDefault();document.getElementById(l.htmlFor)?.click();}});
-document.addEventListener("input",ev=>{
+document.addEventListener("input",ev=>{if(ev.isTrusted&&ev.target.closest&&ev.target.closest("form[data-form=prod]")){ev.target.dataset.user="1";ev.target.classList.remove("filled");}
   const k=ev.target.dataset?.in;if(!k)return;
-  if(k==="q"){S.q=ev.target.value;clearTimeout(S.qt);S.qt=setTimeout(render,150);}
+  if(k==="q"){S.q=ev.target.value;if(S.composing)return;clearTimeout(S.qT);S.qT=setTimeout(()=>{const hb=$("#homeBody");if(hb)hb.innerHTML=homeBody();else render();},180);}
   else if(k==="qty"){S.task.qty=Math.max(1,parseInt(ev.target.value)||1);}
   else if(k==="month"){S.month=ev.target.value||S.month;render();}
   else if(k==="woplate"){wo.plate=ev.target.value.toLocaleUpperCase("tr");const pk=plateKey(wo.plate),v=S.vehicles.get(pk);
@@ -1309,18 +1314,23 @@ function pickShelf(){
   openSheet(`${sheetHd("Raf seç")}${sh.length?`<div class="shelfgrid">${sh.map(s=>`<button class="shelf" data-act="picked-shelf" data-c="${esc(s.code)}"><b>${esc(s.code)}</b></button>`).join("")}</div>`:`<div class="notice info">Raf yok. Ayarlar › Raflar'dan ekle.</div>`}`);
 }
 function lowSheet(){
-  const low=[...S.products.values()].filter(p=>stat(p)[0]!=="ok"&&(+p.min||0)>0).sort((a,b)=>qtyOf(a)-qtyOf(b));
-  const txt=["*Sipariş listesi*",...low.map(p=>`• ${p.name}${p.brand?" ("+p.brand+")":""}${p.partNo?" – "+p.partNo:""}: ${Math.max(1,(+p.min||0)*2-qtyOf(p))} ${unitOf(p)}`)].join("\n");
+  const low=[...S.products.values()].filter(p=>stat(p)[0]!=="ok").sort((a,b)=>qtyOf(a)-qtyOf(b));
+  const txt=["*Sipariş listesi*",...low.map(p=>`• ${p.name}${p.brand?" ("+p.brand+")":""}${p.partNo?" – "+p.partNo:""}: ${Math.max(1,3-qtyOf(p))} ${unitOf(p)}`)].join("\n");
   const sup=S.settings.supplierPhone;
-  shareSheet("Sipariş listesi",txt,sup?[{name:"Tedarikçi",phone:sup}]:[],"Önerilen miktar: uyarı sınırının iki katına tamamlar. Metni düzenleyip gönderebilirsin.");
+  shareSheet("Sipariş listesi",txt,sup?[{name:"Tedarikçi",phone:sup}]:[],"Önerilen miktar: depoda 3 olacak şekilde. Metni düzenleyip gönderebilirsin.");
   $(".sheet").insertAdjacentHTML("beforeend",`<div class="row"><input id="supPhone" class="grow" inputmode="tel" placeholder="Tedarikçi WhatsApp no" value="${esc(sup||"")}"><button class="btn" data-act="sup-save">${sup?"Değiştir":"Kaydet"}</button></div>`);
+}
+function learnCatalog(b){
+  const e={name:b.name,brand:b.brand,partNo:b.partNo,vehicle:b.vehicle,unit:b.unit,ts:Date.now()};
+  [...b.codes,b.partNo].map(keyOf).filter(k=>k.length>=5).forEach(k=>{try{db.doc("catalog/"+k).set(e);}catch(x){console.warn(x);}});
 }
 async function saveProd(form){
   if(!db)return;
   const g=id=>$(id)?.value.trim()||"";
-  const body={name:g("#pName"),brand:g("#pBrand"),partNo:g("#pPart"),category:$("#pCat").value,vehicle:g("#pVeh"),unit:$("#pUnit").value,
-    min:parseInt(g("#pMin"))||0,price:parseMoney(g("#pPrice")),codes:g("#pCodes").split(",").map(s=>s.trim()).filter(Boolean),notes:g("#pNotes"),updatedAt:Date.now()};
+  const body={name:g("#pName"),brand:g("#pBrand"),partNo:g("#pPart"),category:$("#pCat").value||(detectType(g("#pName"))||{}).cat||"",vehicle:g("#pVeh"),unit:$("#pUnit").value,
+    codes:g("#pCodes").split(",").map(s=>s.trim()).filter(Boolean),notes:g("#pNotes"),updatedAt:Date.now()};
   if(!body.name)return;
+  learnCatalog(body);
   const id=form.dataset.id;
   try{
     if(id){await db.doc("products/"+id).update(body);closeSheet();toast("Kaydedildi");return;}
@@ -1566,6 +1576,7 @@ async function startVoice(target,btn){
     if(el.id==="woKm"||el.inputMode==="numeric"||el.inputMode==="decimal"){t=t.replace(/[^\d,]/g,"");}
     else if(el.tagName!=="TEXTAREA"&&el.value.trim()==="")t=t.charAt(0).toLocaleUpperCase("tr")+t.slice(1);
     el.value=el.tagName==="TEXTAREA"&&el.value.trim()?el.value.trim()+" "+t:(el.value.trim()&&el.id!=="q"&&el.id!=="manual"?el.value.trim()+" "+t:t);
+    el.dataset.user="1";el.classList.remove("filled");
     el.dispatchEvent(new Event("input",{bubbles:true}));
     if(el.id==="manual"){el.closest("form")?.requestSubmit();}
     el.focus();
@@ -1582,6 +1593,7 @@ async function ocrFromFile(file){
     let text="",lines=[];
     if(TR&&FS){
       const r=await FS.writeFile({path:"ocr.jpg",data:await blobToB64(file),directory:"CACHE"});
+      try{if(BS){const bc=await BS.readBarcodesFromImage({path:r.uri});(bc&&bc.barcodes||[]).forEach(x=>{const v=x.rawValue||x.displayValue;if(v&&!/^MD:/.test(v))addCode(v);});}}catch(e){console.warn(e);}
       const res=await TR.processImage({path:r.uri});
       text=res.text||"";
       (res.blocks||[]).forEach(b=>(b.lines||[]).forEach(l=>l.text&&lines.push(l.text)));
@@ -1621,18 +1633,18 @@ function handleOcrText(text,rawLines){
   const up=text.toLocaleUpperCase("tr");
   const bar0=(up.match(/\b\d{13}\b|\b\d{12}\b/)||[])[0];
   const brand=findBrand(up,PART_BRANDS)||(eanBrand(bar0)||"").toLocaleUpperCase("tr")||findBrand(up,BRANDS)||null;
-  if(brand&&$("#pBrand")&&!$("#pBrand").value.trim())$("#pBrand").value=niceBrand(brand);
+  if(brand)autoFill("#pBrand",niceBrand(brand));
   const bar=(up.match(/\b\d{13}\b|\b\d{12}\b|\b\d{8}\b/)||[])[0];
-  if(bar){const c=$("#pCodes");if(c&&!c.value.includes(bar))c.value=[c.value,bar].filter(Boolean).join(", ");}
+  if(bar)addCode(bar);
   const part=findPartNo(text,lines)||words.find(t=>/\d/.test(t)&&/[A-Za-z]/.test(t)&&t.length>=5&&t.length<=20&&!/^(EAN|REF|ART|NO)\b/i.test(t))
           ||lines.map(l=>(l.match(/\b\d[\d .\-]{5,16}\d\b/)||[])[0]).find(x=>x&&x.replace(/\D/g,"")!==bar);
-  if(part&&$("#pPart")&&!$("#pPart").value.trim())$("#pPart").value=part.trim();
+  if(part)autoFill("#pPart",part.trim());
   const type=detectType(text);
-  if(type&&$("#pName")&&!$("#pName").value.trim())$("#pName").value=type.name;
+  if(type)autoFill("#pName",type.name);
   if(type&&$("#pCat"))$("#pCat").value=type.cat;
   drawOcr(brand,part,type);
   translateOcrChips();
-  if((part||bar)&&navigator.onLine)webLookupForForm(true);
+  if(part||bar||$("#pCodes")?.value.trim())webLookupForForm(true);
 }
 async function translateOcrChips(){
   if(!TRN)return;
@@ -1773,30 +1785,112 @@ async function webLookup({code,part,name,brand}){
   const conf=types[0]?(types[0].n>=4?"yüksek":types[0].n>=2?"orta":"düşük"):"düşük";
   return {query:qs[0],results:results.slice(0,8),type:types[0]||null,alts:types.slice(1,4),brand:topBrand?niceBrand(String(topBrand).toLocaleUpperCase("tr")):null,vehicles,confidence:conf,titles};
 }
+/* ---------- Parça tanıma motoru ---------- */
+const keyOf=x=>norm(x).replace(/[^a-z0-9]/g,"");
+function autoFill(id,v,force){const el=$(id);if(!el||v==null||String(v).trim()==="")return false;if(el.dataset.user==="1"&&!force)return false;el.value=String(v).trim();el.classList.add("filled");return true;}
+function addCode(c){c=String(c||"").trim();if(!c)return;const el=$("#pCodes");if(!el)return;const cur=el.value.split(",").map(s=>s.trim()).filter(Boolean);if(!cur.some(x=>keyOf(x)===keyOf(c))){cur.push(c);el.value=cur.join(", ");el.classList.add("filled");}}
+function catalogHit(code,part){
+  for(const k of [keyOf(code),keyOf(part)].filter(k=>k.length>=5)){const c=S.catalog.get(k);if(c)return c;}
+  return null;
+}
+function stripHtml(h){return String(h).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/\s+/g," ");}
+function jsonLdProducts(html){
+  const out=[];const re=/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi;let m;
+  while((m=re.exec(html))){try{const walk=o=>{if(!o)return;if(Array.isArray(o))return o.forEach(walk);if(typeof o!=="object")return;const t=[].concat(o["@type"]||[]);if(t.includes("Product"))out.push(o);if(o["@graph"])walk(o["@graph"]);};walk(JSON.parse(m[1].trim()));}catch{}}
+  return out.map(p=>({name:String(p.name||"").trim(),brand:String((p.brand&&(p.brand.name||p.brand))||"").trim(),mpn:String(p.mpn||p.sku||"").trim(),gtin:String(p.gtin13||p.gtin||p.gtin12||"").trim(),desc:String(p.description||"").slice(0,1500)}));
+}
+function metaOf(html,prop){const m=html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${prop}["'][^>]+content=["']([^"']+)`,"i"))||html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${prop}["']`,"i"));return m?m[1]:"";}
+async function fetchPage(url){
+  if(!/^https?:\/\//.test(url)||/\.pdf($|\?)/i.test(url))return null;
+  try{const r=await Promise.race([httpGet(url),new Promise((_,rej)=>setTimeout(()=>rej(new Error("zaman")),7000))]);if(!r||r.status>=400)return null;
+    const h=String(r.text).slice(0,600000);return {url,ld:jsonLdProducts(h),title:metaOf(h,"og:title")||(h.match(/<title[^>]*>([^<]{3,200})/i)||[])[1]||"",desc:metaOf(h,"og:description")||metaOf(h,"description"),text:stripHtml(h).slice(0,120000)};}catch{return null;}
+}
+const YEARS=/((?:19|20)\d{2})\s*(?:[-–—\/]|ile|to|bis|\.\.)\s*((?:19|20)\d{2}|\d{2}\b|günümüz|present|heute)?/i;
+function vehicleFits(texts){
+  const T=" "+norm(texts.join(" \n "))+" ",hits=new Map();
+  for(const m of MODELS){const parts=norm(m).split(" "),model=parts.slice(1).join(" ");if(model.length<2||/^\d+$/.test(model)&&model.length<3)continue;
+    const re=new RegExp("[^a-z0-9çğıöşü]"+reEsc(model)+"(?:\\s*(i{1,3}|iv|v|mk ?\\d))?[^a-z0-9çğıöşü]","g");let mm,n=0,yrs=new Map(),gen=new Map();
+    while((mm=re.exec(T))){n++;if(mm[1])gen.set(mm[1].toUpperCase(),(gen.get(mm[1].toUpperCase())||0)+1);const after=T.slice(mm.index,mm.index+60),y=after.match(YEARS);if(y){let b=y[2]||"";if(/^\d{2}$/.test(b))b=(+b>50?"19":"20")+b;if(/günümüz|present|heute/.test(b))b="";const k=y[1]+"–"+b;yrs.set(k,(yrs.get(k)||0)+1);}}
+    if(n){const make=parts[0];hits.set(m,{name:m,n:n+(T.includes(" "+make+" ")?1:0),years:[...yrs.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"",gen:[...gen.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||""});}}
+  return [...hits.values()].sort((a,b)=>b.n-a.n).slice(0,5).map(h=>h.name+(h.gen?" "+h.gen:"")+(h.years?` (${h.years})`:""));
+}
+function oeNumbers(text,pn){
+  const out=new Set();const re=/\b(?:OE|OEM|O\.E\.|orijinal\s*(?:no|numara(?:sı)?)|Vergleichsnummer|OE[- ]?Nr\.?)\s*[:.]?\s*((?:[A-Z0-9][A-Z0-9 .\-\/]{3,18}[A-Z0-9](?:\s*[,;]\s*)?){1,4})/gi;let m;
+  while((m=re.exec(text))){m[1].split(/\.\s/)[0].split(/[,;]/).map(x=>x.trim().replace(/\.$/,"")).filter(x=>/\d/.test(x)&&x.length>=5&&x.length<=18&&(x.match(/\b[A-Z]{2,}\b/g)||[]).length<2&&keyOf(x)!==keyOf(pn)).forEach(x=>out.add(x));if(out.size>=4)break;}
+  return [...out].slice(0,4);
+}
+async function identify({code,part,name,brand}){
+  const hit=catalogHit(code,part);
+  if(hit)return {fromCatalog:true,pct:100,name:hit.name,brand:hit.brand,partNo:hit.partNo||part,vehicles:hit.vehicle?[hit.vehicle]:[],unit:hit.unit,oe:[],results:[],sources:0};
+  const pn=(part||"").trim(),qs=[];
+  if(pn)qs.push([brand,pn].filter(Boolean).join(" "));
+  if(code&&keyOf(code)!==keyOf(pn))qs.push(code);
+  if(pn)qs.push(pn+" yedek parça");
+  if(!qs.length&&name)qs.push(name);
+  if(!qs.length)throw new Error("Aranacak kod yok");
+  const jobs=[];qs.slice(0,3).forEach((q,i)=>{jobs.push(searchBing(q).catch(()=>[]));if(i<2)jobs.push(searchDDG(q).catch(()=>[]));});
+  if(code)jobs.push(lookupUPC(code));
+  const all=(await Promise.all(jobs)).flat();
+  const seen=new Set(),results=all.filter(r=>{const k=r.url||r.title;if(!k||seen.has(k))return false;seen.add(k);return true;});
+  const keys=[keyOf(code),keyOf(pn)].filter(k=>k.length>=5);
+  const mentions=r=>keys.length&&keys.some(k=>keyOf(r.title+" "+r.snippet+" "+r.url).includes(k));
+  const strong=results.filter(mentions),use=strong.length?strong:results;
+  // En güvenilir sonuçların sayfalarını aç: ürün bilgisi (JSON-LD), uyumlu araç listesi
+  const pages=(await Promise.all(use.slice(0,3).map(r=>fetchPage(r.url)))).filter(Boolean);
+  const ld=pages.flatMap(p=>p.ld.filter(x=>!keys.length||keys.some(k=>keyOf([x.name,x.mpn,x.gtin,x.desc].join(" ")).includes(k))||p.ld.length===1));
+  const texts=[...use.map(r=>r.title+" . "+r.snippet),...ld.map(x=>x.name+" . "+x.name+" . "+x.name+" . "+x.desc),...pages.map(p=>p.title+" . "+p.desc)];
+  const types=tally(texts.join(" \n "));
+  const up=texts.join(" ").toLocaleUpperCase("tr"),bcount=new Map();
+  PART_BRANDS.forEach(b=>{const n=(up.match(new RegExp("(^|[^A-ZÇĞİÖŞÜ])"+reEsc(b)+"([^A-ZÇĞİÖŞÜ]|$)","g"))||[]).length;if(n)bcount.set(b,n);});
+  const ldBrand=ld.map(x=>x.brand).find(b=>b&&b.length>1&&!/^(marka|brand)$/i.test(b));
+  const brandRaw=ldBrand||results.find(r=>r.brand)?.brand||eanBrand(code)||[...bcount.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||brand||null;
+  const ldMpn=ld.map(x=>x.mpn).find(x=>x&&/\d/.test(x)&&x.length>=4);
+  const vehicles=vehicleFits([...texts,...pages.map(p=>p.text.slice(0,60000))]);
+  const oe=oeNumbers([...texts,...pages.map(p=>p.text.slice(0,60000))].join(" "),pn||ldMpn||"");
+  let nm=types[0]?types[0].name:"";
+  if(!nm&&ld[0]&&ld[0].name)nm=cleanTitle(await toTurkish(ld[0].name));
+  const agree=types[0]?types[0].n/Math.max(1,types.reduce((a,t)=>a+t.n,0)):0;
+  let pct=0;if(nm){pct=30+Math.min(30,strong.length*8)+(ld.length?20:0)+Math.round(agree*15)+(brandRaw?5:0);pct=Math.min(98,pct);}
+  if(!strong.length)pct=Math.min(pct,45);
+  return {name:nm,cat:types[0]?.cat||"",alts:types.slice(1,4),brand:brandRaw?niceBrand(String(brandRaw).toLocaleUpperCase("tr")):null,partNo:pn||ldMpn||"",vehicles,oe,pct,sources:strong.length,results:use.slice(0,8),query:qs[0]};
+}
+function idCardHtml(r){
+  if(!r)return "";
+  const lvl=r.pct>=75?"ok":r.pct>=50?"info":"warn";
+  return `<div class="card stack idcard ${lvl}" style="gap:6px">
+    <div class="row"><b class="grow" style="font-size:18px">${esc(r.name||"Tür bulunamadı")}</b><span class="pill ${r.pct>=75?"ok":r.pct>=50?"neu":"warn"}">${r.fromCatalog?"Kayıtlı":`%${r.pct}`}</span></div>
+    ${r.brand||r.partNo?`<div>${r.brand?`<b>${esc(r.brand)}</b>`:""}${r.partNo?` · <span class="mono">${esc(r.partNo)}</span>`:""}</div>`:""}
+    ${r.vehicles.length?`<div style="font-size:14px"><span class="muted">Uyumlu:</span> ${esc(r.vehicles.join(", "))}</div>`:""}
+    ${r.oe&&r.oe.length?`<div style="font-size:14px"><span class="muted">OE no:</span> <span class="mono">${esc(r.oe.join(", "))}</span></div>`:""}
+    <div class="muted" style="font-size:12px">${r.fromCatalog?"Bu kod daha önce kaydedilmiş; bilgiler oradan geldi.":r.sources?`Kodu birebir geçen ${r.sources} kaynaktan birleştirildi.`:"Kodu birebir geçen kaynak bulunamadı, tahmin zayıf."} Yanlışsa alanı düzelt.</div></div>`;
+}
+
 async function webLookupForForm(auto){
   const out=$("#webOut");if(!out)return;
   const code=($("#pCodes")?.value||"").split(",").map(s=>s.trim()).filter(Boolean)[0]||"";
   const part=$("#pPart")?.value.trim()||"",name=$("#pName")?.value.trim()||"",brand=$("#pBrand")?.value.trim()||"";
-  if(!code&&!part&&!name){if(!auto)out.innerHTML=`<div class="notice warn">Önce barkodu okut ya da parça numarasını yaz.</div>`;return;}
-  if(!navigator.onLine){out.innerHTML=`<div class="notice warn">İnternet yok. İnternet gelince “İnternette tanı”ya bas.</div>`;return;}
-  out.innerHTML=`<div class="notice info">İnternette aranıyor: <b class="mono">${esc(part||code||name)}</b>…</div>`;
+  if(!code&&!part&&!name){if(!auto)out.innerHTML=`<div class="notice warn">Önce barkodu okut ya da kutunun fotoğrafını çek.</div>`;return;}
+  const cat=catalogHit(code,part);
+  if(!cat&&!navigator.onLine){out.innerHTML=`<div class="notice warn">İnternet yok. Kutudan okunanlar yazıldı; internet gelince “İnternette tekrar ara”ya bas.</div>`;return;}
+  const myRun=(S.idRun=(S.idRun||0)+1);
+  out.innerHTML=`<div class="notice info">Parça tanınıyor: <b class="mono">${esc(part||code||name)}</b>… (kaynaklar taranıyor)</div>`;
   try{
-    const r=await webLookup({code,part,name,brand});
-    if(!$("#webOut"))return;
+    const r=await identify({code,part,name,brand});
+    if(!$("#webOut")||myRun!==S.idRun)return;
     S.lastLookup=r;
-    if(TRN){const tt=await toTurkishMany(r.results.map(x=>x.title)),ss=await toTurkishMany(r.results.map(x=>(x.snippet||"").slice(0,160)));r.results.forEach((x,i)=>{x.trTitle=tt[i];x.trSnippet=ss[i];});if(!$("#webOut"))return;}
-    if(!r.results.length){out.innerHTML=`<div class="notice warn">İnternette sonuç bulunamadı. Kutudaki parça numarasını yazıp tekrar dene ya da Google'da bak.</div>${googleBtn(part||code)}`;return;}
-    const fill=(id,v)=>{const el=$(id);if(el&&v&&!el.value.trim()){el.value=v;el.classList.add("filled");}};
-    fill("#pName",r.type&&r.type.name);fill("#pBrand",r.brand);fill("#pVeh",r.vehicles.join(", "));
-    if(r.type&&$("#pCat")&&!document.querySelector("form[data-form=prod]")?.dataset.id)$("#pCat").value=r.type.cat;
-    if(r.vehicles.length){const d=$("#pVeh")?.closest("details");if(d)d.open=true;}
-    out.innerHTML=`<div class="card stack" style="gap:8px">
-      <div class="notice ${r.confidence==="yüksek"?"ok":r.confidence==="orta"?"info":"warn"}" style="font-size:14px">İnternetten bulunan (güven: <b>${r.confidence}</b>): ${r.type?`<b>${esc(r.type.name)}</b>`:"tür bulunamadı"}${r.brand?` · ${esc(r.brand)}`:""}${r.vehicles.length?` · ${esc(r.vehicles.join(", "))}`:""}. Boş alanlara yazıldı, kontrol et.</div>
-      ${r.alts.length?`<div class="chips">${[r.type,...r.alts].filter(Boolean).map(t=>`<button class="chipbtn" type="button" data-act="web-name" data-n="${esc(t.name)}" data-c="${esc(t.cat)}">${esc(t.name)}</button>`).join("")}</div>`:""}
-      <details class="more"><summary>Bulunan sonuçlar (${r.results.length})</summary><div class="stack" style="gap:6px">
+    if(!r.fromCatalog&&!r.results.length){out.innerHTML=`<div class="notice warn">İnternette bu kodla sonuç bulunamadı. Kutunun başka yüzünü okut ya da Google'da bak.</div>${googleBtn(part||code)}`;return;}
+    autoFill("#pName",r.name);autoFill("#pBrand",r.brand);autoFill("#pPart",r.partNo);
+    autoFill("#pVeh",r.vehicles.join(", "));
+    if(r.oe&&r.oe.length)autoFill("#pNotes","OE: "+r.oe.join(", "));
+    if(r.unit)autoFill("#pUnit",r.unit);
+    if(r.cat&&$("#pCat"))$("#pCat").value=r.cat;
+    if(TRN&&r.results.length){const tt=await toTurkishMany(r.results.map(x=>x.title)),ss=await toTurkishMany(r.results.map(x=>(x.snippet||"").slice(0,160)));r.results.forEach((x,i)=>{x.trTitle=tt[i];x.trSnippet=ss[i];});if(!$("#webOut")||myRun!==S.idRun)return;}
+    out.innerHTML=`${idCardHtml(r)}
+      ${r.alts&&r.alts.length?`<div class="chips"><span class="muted" style="font-size:13px;align-self:center">Başka olabilir:</span>${r.alts.map(t=>`<button class="chipbtn" type="button" data-act="web-name" data-n="${esc(t.name)}" data-c="${esc(t.cat)}">${esc(t.name)}</button>`).join("")}</div>`:""}
+      ${r.results.length?`<details class="more"><summary>Kaynaklar (${r.results.length})</summary><div class="stack" style="gap:6px">
         ${r.results.map(x=>{const t=x.trTitle||x.title,sn=x.trSnippet||x.snippet||"";return `<button class="item" type="button" data-act="web-title" data-n="${esc(cleanTitle(t).slice(0,80))}" style="padding:8px 0"><div class="grow"><div class="t" style="font-size:14px">${esc(t)}</div><div class="s">${esc(sn.slice(0,140))}</div></div></button>`;}).join("")}
-        <div class="muted" style="font-size:12px">Bir başlığa dokunursan ürün adı olarak yazılır.</div></div></details>
-      ${googleBtn(part||code)}</div>`;
+        <div class="muted" style="font-size:12px">Bir başlığa dokunursan ürün adı olarak yazılır.</div></div></details>`:""}
+      <div class="row"><button class="btn sm" type="button" data-act="web-lookup">İnternette tekrar ara</button>${googleBtn(part||code)}</div>`;
   }catch(e){console.warn(e);out.innerHTML=`<div class="notice warn">Arama yapılamadı (${esc(e.message||e)}).</div>${googleBtn(part||code)}`;}
 }
 function cleanTitle(t){return String(t).split(/\s[|–—-]\s|\s\|\s/)[0].replace(/\b(fiyat[ıi]?|fiyatları|satın al|en uygun)\b.*$/i,"").trim();}
@@ -1810,7 +1904,7 @@ function saveLocal(patch){Object.assign(LOCAL,patch);try{localStorage.setItem("s
 const SYNC={on:false,shop:null,pending:0,online:navigator.onLine,error:""};
 window.addEventListener("online",()=>{SYNC.online=true;syncPill();});
 window.addEventListener("offline",()=>{SYNC.online=false;syncPill();});
-const SYNC_COLS=["products","shelves","staff","orders","moves","vehicles","settings"];
+const SYNC_COLS=["products","shelves","staff","orders","moves","vehicles","settings","catalog"];
 async function readSyncCfg(){try{return JSON.parse(await readText("sync.json"));}catch{return null;}}
 async function writeSyncCfg(o){if(o)await writeText("sync.json",JSON.stringify(o));else{try{if(FS)await FS.deleteFile({path:"sync.json",directory:"DATA"});else localStorage.removeItem("sd:sync.json");}catch{}}}
 function newShopId(){const a="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",r=new Uint8Array(24);crypto.getRandomValues(r);return [...r].map(x=>a[x%a.length]).join("");}
@@ -1879,7 +1973,7 @@ function snapshotData(){
   if(db&&!db.fire&&db._data)return db._data;
   const m=(map,key)=>Object.fromEntries([...map.values()].map(v=>{const {id,...r}=v;return [v[key]||id,r];}));
   return {products:m(S.products,"id"),shelves:Object.fromEntries([...S.shelves.values()].map(v=>[v.code,v])),staff:m(S.staff,"id"),orders:m(S.orders,"id"),
-    moves:Object.fromEntries(S.moves.map(v=>{const {id,...r}=v;return [id,r];})),vehicles:Object.fromEntries([...S.vehicles.entries()]),settings:{main:S.settings}};
+    moves:Object.fromEntries(S.moves.map(v=>{const {id,...r}=v;return [id,r];})),vehicles:Object.fromEntries([...S.vehicles.entries()]),catalog:Object.fromEntries([...S.catalog.entries()]),settings:{main:S.settings}};
 }
 function syncCardHtml(){
   if(!window.FIREBASE_CONFIG)return `<div class="card stack"><h3>Telefonlar arası eşitleme</h3><div class="notice info">Kurulum bekleniyor. Firebase bilgileri eklenince burada açılacak.</div></div>`;
@@ -1986,6 +2080,7 @@ render();
   db.collection("orders").onSnapshot(s=>{S.orders=new Map(s.docs.map(d=>[d.id,{id:d.id,...d.data()}]));done("o");});
   db.collection("moves").orderBy("ts","desc").limit(1000).onSnapshot(s=>{S.moves=s.docs.map(d=>({id:d.id,...d.data()}));done("m");});
   db.collection("vehicles").onSnapshot(s=>{S.vehicles=new Map(s.docs.map(d=>[d.id,{...d.data()}]));done("v");});
+  db.collection("catalog").onSnapshot(s=>{S.catalog=new Map(s.docs.map(d=>[d.id,{...d.data()}]));});
   db.doc("settings/main").onSnapshot(s=>{S.settings=s.exists?{...s.data()}:{};if(S.view==="ayar")render();});
   S.loading=true;
   if(!db.fire){try{await Promise.race([loadDB(),new Promise(r=>setTimeout(r,5000))]);}catch(e){logErr("Kayıtlar okunamadı: "+(e&&e.message||e));}}
